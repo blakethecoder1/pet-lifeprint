@@ -1,0 +1,939 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lifeprint - The City Remembers</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Memory Pulse Overlay (screen-edge pulse effect) -->
+    <div id="memory-pulse-overlay" class="memory-pulse-overlay hidden"></div>
+    
+    <!-- Memory Popup (shown when near someone with history) -->
+    <div id="memory-popup" class="memory-popup hidden">
+        <div class="memory-popup-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2z"/>
+                <path d="M12 6v6l4 2"/>
+            </svg>
+        </div>
+        <div class="memory-popup-content">
+            <div class="memory-popup-header">Memory surfaced</div>
+            <div id="memory-popup-name" class="memory-popup-name"></div>
+            <div id="memory-popup-memory" class="memory-popup-memory"></div>
+            <div id="memory-popup-note" class="memory-popup-note"></div>
+        </div>
+    </div>
+    
+    <!-- Notification Container (always visible) -->
+    <div id="notification-container" class="notification-container"></div>
+    
+    <div id="app" class="nui-hidden">
+        <!-- Loading State -->
+        <div id="loading-screen" class="loading-screen hidden">
+            <div class="loading-content">
+                <div class="loading-logo">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
+                        <circle cx="12" cy="12" r="3"/>
+                        <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+                    </svg>
+                </div>
+                <p class="loading-text">Loading your memories...</p>
+                <div class="loading-bar">
+                    <div class="loading-bar-fill"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Container -->
+        <div id="main-container" class="main-container hidden">
+            <!-- Header -->
+            <header class="header">
+                <div class="header-left">
+                    <div class="logo-container">
+                        <svg class="logo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
+                            <circle cx="12" cy="12" r="3"/>
+                            <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+                        </svg>
+                    </div>
+                    <div class="header-title">
+                        <h1>Lifeprint</h1>
+                        <span class="tagline">The City Remembers</span>
+                    </div>
+                </div>
+                <button id="close-btn" class="close-btn" title="Close (ESC)">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M18 6L6 18M6 6l12 12"/>
+                    </svg>
+                </button>
+            </header>
+
+            <!-- Player Info Bar -->
+            <div class="player-bar">
+                <div class="player-photo-container">
+                    <div class="player-photo" id="player-photo">
+                        <!-- Default avatar with initials (shown while photo loads or on error) -->
+                        <div class="player-photo-placeholder" id="photo-placeholder">
+                            <span class="player-initials" id="player-initials">?</span>
+                        </div>
+                        <!-- Actual photo image -->
+                        <img id="player-photo-img" class="player-photo-img hidden" alt="Character photo">
+                        <!-- Loading spinner -->
+                        <div class="photo-loading hidden" id="photo-loading">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="10" stroke-dasharray="30 70"/>
+                            </svg>
+                        </div>
+                    </div>
+                    <button class="photo-refresh-btn" id="photo-refresh-btn" title="Retake photo">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 6"/>
+                            <path d="M3 3v3h3"/>
+                            <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 18"/>
+                            <path d="M21 21v-3h-3"/>
+                        </svg>
+                    </button>
+                </div>
+                <div class="player-info">
+                    <span id="player-name" class="player-name">Loading...</span>
+                    <span id="player-updated" class="player-updated">Last updated: --</span>
+                </div>
+            </div>
+
+            <!-- Navigation Tabs -->
+            <nav class="nav-tabs">
+                <button class="nav-tab active" data-tab="timeline" title="Your timeline of memories">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <path d="M12 8v4l3 3"/>
+                        <circle cx="12" cy="12" r="10"/>
+                    </svg>
+                    <span>Timeline</span>
+                </button>
+                <button class="nav-tab" data-tab="people" title="People you've met">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                        <circle cx="9" cy="7" r="4"/>
+                        <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                        <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                    </svg>
+                    <span>People</span>
+                </button>
+                <button class="nav-tab" data-tab="reputation" title="Your standing in the city">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+                    </svg>
+                    <span>Reputation</span>
+                </button>
+                <button class="nav-tab" data-tab="brain" title="Your Memory Brain visualization">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2z"/>
+                        <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2"/>
+                        <path d="M8 9a2 2 0 1 0 0-4 2 2 0 0 0 0 4z" fill="currentColor" opacity="0.6"/>
+                        <path d="M16 9a2 2 0 1 0 0-4 2 2 0 0 0 0 4z" fill="currentColor" opacity="0.6"/>
+                        <path d="M9 14a3 3 0 1 0 6 0" stroke-linecap="round"/>
+                    </svg>
+                    <span>Brain</span>
+                </button>
+                <button class="nav-tab" data-tab="rumors" title="Whispers from the city">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                    </svg>
+                    <span>Rumors</span>
+                </button>
+            </nav>
+
+            <!-- Content Area -->
+            <main class="content-area">
+                <!-- Timeline Tab -->
+                <section id="tab-timeline" class="tab-content active">
+                    <div class="tab-header">
+                        <h2>Your Timeline</h2>
+                        <button class="btn-add" id="add-memory-btn" title="Record a new memory">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12 5v14M5 12h14"/>
+                            </svg>
+                            Add Memory
+                        </button>
+                    </div>
+                    <!-- Filter Pills -->
+                    <div class="filter-pills" id="timeline-filters">
+                        <button class="filter-pill active" data-filter="all">All</button>
+                        <button class="filter-pill" data-filter="encounter">Encounters</button>
+                        <button class="filter-pill" data-filter="friendship">Friendships</button>
+                        <button class="filter-pill" data-filter="conflict">Conflicts</button>
+                        <button class="filter-pill" data-filter="kill">Kills</button>
+                        <button class="filter-pill" data-filter="death">Deaths</button>
+                        <button class="filter-pill" data-filter="crime">Crime</button>
+                        <button class="filter-pill" data-filter="business">Business</button>
+                    </div>
+                    <div id="memories-list" class="memories-list"></div>
+                </section>
+
+                <!-- People Tab -->
+                <section id="tab-people" class="tab-content">
+                    <div class="tab-header">
+                        <h2>People You Know</h2>
+                    </div>
+                    <!-- Search -->
+                    <div class="search-box">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <circle cx="11" cy="11" r="8"/>
+                            <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                        </svg>
+                        <input type="text" id="people-search" placeholder="Search relationships...">
+                    </div>
+                    <div id="relationships-list" class="relationships-list"></div>
+                    
+                    <!-- Social Web Section (Seen With) -->
+                    <div class="social-web-section" id="social-web-section">
+                        <div class="social-web-header">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                                <circle cx="9" cy="7" r="4"/>
+                                <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                                <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                            </svg>
+                            <span>Frequently Seen With</span>
+                        </div>
+                        <div id="social-links-list" class="social-links-list">
+                            <div class="empty-state">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                    <circle cx="12" cy="12" r="10"/>
+                                    <line x1="12" y1="8" x2="12" y2="12"/>
+                                    <line x1="12" y1="16" x2="12.01" y2="16"/>
+                                </svg>
+                                <p>No frequent connections yet</p>
+                                <span>Spend more time near other players to build social patterns</span>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Reputation Tab -->
+                <section id="tab-reputation" class="tab-content">
+                    <div class="tab-header">
+                        <h2>Your Reputation</h2>
+                    </div>
+                    <!-- Combat Stats -->
+                    <div class="combat-stats" id="combat-stats">
+                        <div class="combat-stat">
+                            <div class="combat-stat-icon kills">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                    <circle cx="12" cy="12" r="10"/>
+                                    <line x1="22" y1="12" x2="18" y2="12"/>
+                                    <line x1="6" y1="12" x2="2" y2="12"/>
+                                    <line x1="12" y1="6" x2="12" y2="2"/>
+                                    <line x1="12" y1="22" x2="12" y2="18"/>
+                                </svg>
+                            </div>
+                            <div class="combat-stat-info">
+                                <span class="combat-stat-value" id="kills-count">0</span>
+                                <span class="combat-stat-label">Kills</span>
+                            </div>
+                        </div>
+                        <div class="combat-stat">
+                            <div class="combat-stat-icon deaths">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                    <circle cx="12" cy="12" r="10"/>
+                                    <path d="M16 16s-1.5-2-4-2-4 2-4 2"/>
+                                    <line x1="9" y1="9" x2="9.01" y2="9"/>
+                                    <line x1="15" y1="9" x2="15.01" y2="9"/>
+                                </svg>
+                            </div>
+                            <div class="combat-stat-info">
+                                <span class="combat-stat-value" id="deaths-count">0</span>
+                                <span class="combat-stat-label">Deaths</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="reputation-list" class="reputation-list"></div>
+                    <!-- Reputation Tags -->
+                    <div id="reputation-tags" class="reputation-tags"></div>
+                    <!-- Character Read -->
+                    <div class="character-read" id="character-read">
+                        <div class="character-read-header">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                                <polyline points="14 2 14 8 20 8"/>
+                                <line x1="16" y1="13" x2="8" y2="13"/>
+                                <line x1="16" y1="17" x2="8" y2="17"/>
+                                <polyline points="10 9 9 9 8 9"/>
+                            </svg>
+                            <span>Character Read</span>
+                        </div>
+                        <p id="character-read-text">Based on your reputation, you are seen as an unknown figure in the city...</p>
+                    </div>
+                </section>
+
+                <!-- Memory Brain Tab -->
+                <section id="tab-brain" class="tab-content">
+                    <div class="tab-header">
+                        <h2>Memory Brain</h2>
+                    </div>
+                    
+                    <!-- Brain Visualization - Futuristic HUD Style -->
+                    <div class="brain-container" id="brain-container">
+                        <div class="brain-visualization" id="brain-visualization">
+                            <!-- Base Brain Image -->
+                            <img src="brain-hud.png" alt="Memory Brain" class="brain-image" id="brain-image">
+                            
+                            <!-- Interactive Quadrant Overlays -->
+                            <div class="brain-quadrant-overlay brain-quadrant-good" id="brain-zone-good" data-category="good"></div>
+                            <div class="brain-quadrant-overlay brain-quadrant-bad" id="brain-zone-bad" data-category="bad"></div>
+                            <div class="brain-quadrant-overlay brain-quadrant-rumors" id="brain-zone-rumors" data-category="rumors"></div>
+                            <div class="brain-quadrant-overlay brain-quadrant-other" id="brain-zone-other" data-category="other"></div>
+                            
+                            <!-- Pulsing Glow Effects -->
+                            <div class="brain-glow brain-glow-good" id="glow-good"></div>
+                            <div class="brain-glow brain-glow-bad" id="glow-bad"></div>
+                            <div class="brain-glow brain-glow-rumors" id="glow-rumors"></div>
+                            <div class="brain-glow brain-glow-other" id="glow-other"></div>
+                            
+                            <!-- Rotating HUD Ring -->
+                            <div class="brain-hud-ring"></div>
+                        </div>
+                        
+                        <!-- Dominant indicator -->
+                        <div class="brain-dominant" id="brain-dominant">
+                            <span class="brain-dominant-label">Dominant</span>
+                            <span class="brain-dominant-value" id="brain-dominant-value">Unknown</span>
+                        </div>
+                    </div>
+                    
+                    <!-- Category Stats -->
+                    <div class="brain-stats">
+                        <div class="brain-stat brain-stat-good" data-category="good">
+                            <div class="brain-stat-header">
+                                <div class="brain-stat-color"></div>
+                                <span class="brain-stat-label">Good Memories</span>
+                                <span class="brain-stat-count" id="brain-good-count">0</span>
+                            </div>
+                            <div class="brain-stat-bar">
+                                <div class="brain-stat-bar-fill" id="brain-good-bar" style="width: 0%"></div>
+                            </div>
+                        </div>
+                        
+                        <div class="brain-stat brain-stat-bad" data-category="bad">
+                            <div class="brain-stat-header">
+                                <div class="brain-stat-color"></div>
+                                <span class="brain-stat-label">Bad Memories</span>
+                                <span class="brain-stat-count" id="brain-bad-count">0</span>
+                            </div>
+                            <div class="brain-stat-bar">
+                                <div class="brain-stat-bar-fill" id="brain-bad-bar" style="width: 0%"></div>
+                            </div>
+                        </div>
+                        
+                        <div class="brain-stat brain-stat-rumors" data-category="rumors">
+                            <div class="brain-stat-header">
+                                <div class="brain-stat-color"></div>
+                                <span class="brain-stat-label">Rumors</span>
+                                <span class="brain-stat-count" id="brain-rumors-count">0</span>
+                            </div>
+                            <div class="brain-stat-bar">
+                                <div class="brain-stat-bar-fill" id="brain-rumors-bar" style="width: 0%"></div>
+                            </div>
+                        </div>
+                        
+                        <div class="brain-stat brain-stat-other" data-category="other">
+                            <div class="brain-stat-header">
+                                <div class="brain-stat-color"></div>
+                                <span class="brain-stat-label">Other</span>
+                                <span class="brain-stat-count" id="brain-other-count">0</span>
+                            </div>
+                            <div class="brain-stat-bar">
+                                <div class="brain-stat-bar-fill" id="brain-other-bar" style="width: 0%"></div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Total memories -->
+                    <div class="brain-total">
+                        <span class="brain-total-label">Total Memories</span>
+                        <span class="brain-total-value" id="brain-total-count">0</span>
+                    </div>
+                    
+                    <!-- Brain Read -->
+                    <div class="brain-read" id="brain-read">
+                        <div class="brain-read-header">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                <circle cx="12" cy="12" r="10"/>
+                                <path d="M12 16v-4"/>
+                                <path d="M12 8h.01"/>
+                            </svg>
+                            <span>Brain Read</span>
+                        </div>
+                        <p id="brain-read-text">Your Lifeprint is empty. The city doesn't know you yet.</p>
+                    </div>
+                    
+                    <!-- Recent memories by category -->
+                    <div class="brain-recent" id="brain-recent">
+                        <div class="brain-recent-header">Recent Memories</div>
+                        <div class="brain-recent-tabs">
+                            <button class="brain-recent-tab active" data-recent-category="good">Good</button>
+                            <button class="brain-recent-tab" data-recent-category="bad">Bad</button>
+                            <button class="brain-recent-tab" data-recent-category="rumors">Rumors</button>
+                            <button class="brain-recent-tab" data-recent-category="other">Other</button>
+                        </div>
+                        <div id="brain-recent-list" class="brain-recent-list">
+                            <div class="empty-state">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                    <circle cx="12" cy="12" r="10"/>
+                                    <line x1="12" y1="8" x2="12" y2="12"/>
+                                    <line x1="12" y1="16" x2="12.01" y2="16"/>
+                                </svg>
+                                <p>No memories yet</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Legend -->
+                    <div class="brain-legend">
+                        <div class="brain-legend-item">
+                            <div class="brain-legend-color brain-legend-good"></div>
+                            <span>Positive experiences</span>
+                        </div>
+                        <div class="brain-legend-item">
+                            <div class="brain-legend-color brain-legend-bad"></div>
+                            <span>Dark moments</span>
+                        </div>
+                        <div class="brain-legend-item">
+                            <div class="brain-legend-color brain-legend-rumors"></div>
+                            <span>City whispers</span>
+                        </div>
+                        <div class="brain-legend-item">
+                            <div class="brain-legend-color brain-legend-other"></div>
+                            <span>Neutral events</span>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Rumors Tab -->
+                <section id="tab-rumors" class="tab-content">
+                    <div class="tab-header">
+                        <h2>City Whispers</h2>
+                        <button class="btn-add" id="add-rumor-btn" title="Record a rumor">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12 5v14M5 12h14"/>
+                            </svg>
+                            Add Rumor
+                        </button>
+                    </div>
+                    <div id="rumors-list" class="rumors-list"></div>
+                </section>
+            </main>
+        </div>
+
+        <!-- Add Memory Modal -->
+        <div id="memory-modal" class="modal hidden">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>Add Memory</h3>
+                    <button class="modal-close" data-modal="memory-modal">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M18 6L6 18M6 6l12 12"/>
+                        </svg>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label>Memory Type</label>
+                        <select id="memory-type">
+                            <option value="encounter">Encounter</option>
+                            <option value="conflict">Conflict</option>
+                            <option value="friendship">Friendship</option>
+                            <option value="business">Business</option>
+                            <option value="romantic">Romantic</option>
+                            <option value="betrayal">Betrayal</option>
+                            <option value="rescue">Rescue</option>
+                            <option value="crime">Crime</option>
+                            <option value="other">Other</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Related Person (Optional)</label>
+                        <div class="search-input-wrapper">
+                            <input type="text" id="memory-person-search" placeholder="Search by name...">
+                            <div id="memory-search-results" class="search-results hidden"></div>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Description</label>
+                        <textarea id="memory-description" placeholder="What happened?" rows="3"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label>Location (Optional)</label>
+                        <input type="text" id="memory-location" placeholder="Where did it happen?">
+                    </div>
+                    <div class="form-group">
+                        <label>Visibility</label>
+                        <select id="memory-visibility">
+                            <option value="private">Private - Only you can see this</option>
+                            <option value="public">Public - Can be shared via exports</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn-secondary" data-modal="memory-modal">Cancel</button>
+                    <button class="btn-primary" id="save-memory-btn">Save Memory</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Add Rumor Modal -->
+        <div id="rumor-modal" class="modal hidden">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>Record a Whisper</h3>
+                    <button class="modal-close" data-modal="rumor-modal">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M18 6L6 18M6 6l12 12"/>
+                        </svg>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label>Rumor Type</label>
+                        <select id="rumor-type">
+                            <option value="hearsay">Hearsay</option>
+                            <option value="secret">Secret</option>
+                            <option value="crime">Crime</option>
+                            <option value="affair">Personal</option>
+                            <option value="business">Business</option>
+                            <option value="conflict">Conflict</option>
+                            <option value="achievement">Achievement</option>
+                            <option value="scandal">Scandal</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>About Whom (Optional)</label>
+                        <div class="search-input-wrapper">
+                            <input type="text" id="rumor-person-search" placeholder="Search by name...">
+                            <div id="rumor-search-results" class="search-results hidden"></div>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>The Whisper</label>
+                        <textarea id="rumor-content" placeholder="What did you hear on the streets?" rows="3"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn-secondary" data-modal="rumor-modal">Cancel</button>
+                    <button class="btn-primary" id="save-rumor-btn">Save Rumor</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Toast Notifications -->
+        <div id="toast-container" class="toast-container"></div>
+    </div>
+
+    <!-- Memory Brought Up Popup -->
+    <div id="memory-popup" class="memory-popup hidden">
+        <div class="memory-popup-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <circle cx="12" cy="12" r="3"/>
+                <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+            </svg>
+        </div>
+        <div class="memory-popup-content">
+            <div class="memory-popup-header">Memory brought up</div>
+            <div class="memory-popup-name" id="memory-popup-name">You recognize someone</div>
+            <div class="memory-popup-memory" id="memory-popup-memory"></div>
+            <div class="memory-popup-note" id="memory-popup-note"></div>
+        </div>
+    </div>
+
+    <!-- Recent Faces Panel -->
+    <div id="recent-faces-panel" class="recent-faces-panel nui-hidden">
+        <div class="recent-faces-header">
+            <div class="recent-faces-title">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                    <circle cx="9" cy="7" r="4"/>
+                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                    <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                </svg>
+                <span>Recent Faces</span>
+            </div>
+            <button id="recent-faces-close" class="close-btn" title="Close (ESC)">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M18 6L6 18M6 6l12 12"/>
+                </svg>
+            </button>
+        </div>
+        <div class="recent-faces-subtitle">People you've passed in the last 10 minutes</div>
+        <div id="recent-faces-list" class="recent-faces-list">
+            <!-- Entries will be populated dynamically -->
+        </div>
+    </div>
+
+    <!-- Admin Panel Container -->
+    <div id="admin-container" class="admin-container nui-hidden">
+        <div class="admin-panel">
+            <!-- Admin Header -->
+            <header class="admin-header">
+                <div class="admin-header-left">
+                    <div class="admin-logo">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/>
+                            <path fill-rule="evenodd" d="M1.323 11.447C2.811 6.976 7.028 3.75 12.001 3.75c4.97 0 9.185 3.223 10.675 7.69.12.362.12.752 0 1.113-1.487 4.471-5.705 7.697-10.677 7.697-4.97 0-9.186-3.223-10.675-7.69a1.762 1.762 0 0 1 0-1.113Z" clip-rule="evenodd"/>
+                        </svg>
+                    </div>
+                    <div class="admin-header-title">
+                        <h1>Lifeprint Admin</h1>
+                        <span class="admin-badge">Management Panel</span>
+                    </div>
+                </div>
+                <button id="admin-close-btn" class="close-btn" title="Close (ESC)">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M18 6L6 18M6 6l12 12"/>
+                    </svg>
+                </button>
+            </header>
+
+            <!-- Admin Content -->
+            <div class="admin-content">
+            <!-- Player Search Section -->
+            <div class="admin-section">
+                <h3 class="admin-section-title">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <circle cx="11" cy="11" r="8"/>
+                        <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                    </svg>
+                    Search Player
+                </h3>
+                <div class="admin-search-row">
+                    <input type="number" id="admin-player-id" placeholder="Server ID" min="1" max="65535">
+                    <button id="admin-search-btn" class="btn-primary">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="11" cy="11" r="8"/>
+                            <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                        </svg>
+                        Search
+                    </button>
+                </div>
+            </div>
+
+            <!-- Selected Player Info -->
+            <div id="admin-player-info" class="admin-player-info hidden">
+                <div class="admin-player-header">
+                    <div class="admin-player-avatar">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                            <circle cx="12" cy="7" r="4"/>
+                        </svg>
+                    </div>
+                    <div class="admin-player-details">
+                        <span id="admin-player-name" class="admin-player-name">--</span>
+                        <span id="admin-player-identifier" class="admin-player-identifier">--</span>
+                    </div>
+                    <button id="admin-refresh-btn" class="btn-icon" title="Refresh Data">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 6"/>
+                            <path d="M3 3v3h3"/>
+                            <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 18"/>
+                            <path d="M21 21v-3h-3"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Admin Tabs -->
+            <div id="admin-tabs" class="admin-tabs hidden">
+                <button class="admin-tab active" data-admin-tab="data">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                        <polyline points="14 2 14 8 20 8"/>
+                    </svg>
+                    Data
+                </button>
+                <button class="admin-tab" data-admin-tab="add">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <path d="M12 5v14M5 12h14"/>
+                    </svg>
+                    Add
+                </button>
+                <button class="admin-tab" data-admin-tab="counters">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <path d="M12 20V10"/>
+                        <path d="M18 20V4"/>
+                        <path d="M6 20v-4"/>
+                    </svg>
+                    Counters
+                </button>
+                <button class="admin-tab" data-admin-tab="wipe">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <path d="M3 6h18"/>
+                        <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
+                        <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+                    </svg>
+                    Wipe
+                </button>
+            </div>
+
+            <!-- Admin Tab Content -->
+            <div id="admin-tab-content" class="admin-tab-content hidden">
+                <!-- Data Tab -->
+                <div id="admin-tab-data" class="admin-tab-panel active">
+                    <div class="admin-data-summary">
+                        <div class="admin-stat">
+                            <span class="admin-stat-value" id="admin-memories-count">0</span>
+                            <span class="admin-stat-label">Memories</span>
+                        </div>
+                        <div class="admin-stat">
+                            <span class="admin-stat-value" id="admin-relationships-count">0</span>
+                            <span class="admin-stat-label">Relationships</span>
+                        </div>
+                        <div class="admin-stat">
+                            <span class="admin-stat-value" id="admin-rumors-count">0</span>
+                            <span class="admin-stat-label">Rumors</span>
+                        </div>
+                    </div>
+                    <div id="admin-character-read" class="admin-character-read">
+                        <p id="admin-character-read-text">Select a player to view their data...</p>
+                    </div>
+                    <div id="admin-tags-container" class="admin-tags-container"></div>
+                </div>
+
+                <!-- Add Tab -->
+                <div id="admin-tab-add" class="admin-tab-panel">
+                    <div class="admin-form-section">
+                        <h4>Add Memory</h4>
+                        <div class="form-group">
+                            <label>Type</label>
+                            <select id="admin-memory-type">
+                                <option value="encounter">Encounter</option>
+                                <option value="conflict">Conflict</option>
+                                <option value="friendship">Friendship</option>
+                                <option value="business">Business</option>
+                                <option value="crime">Crime</option>
+                                <option value="rescue">Rescue</option>
+                                <option value="other">Other</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Description</label>
+                            <textarea id="admin-memory-desc" placeholder="Memory description..." rows="2"></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label>Location (Optional)</label>
+                            <input type="text" id="admin-memory-location" placeholder="Where did it happen?">
+                        </div>
+                        <button id="admin-add-memory-btn" class="btn-primary btn-full">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12 5v14M5 12h14"/>
+                            </svg>
+                            Add Memory
+                        </button>
+                    </div>
+                    <div class="admin-form-divider"></div>
+                    <div class="admin-form-section">
+                        <h4>Add Rumor</h4>
+                        <div class="form-group">
+                            <label>Type</label>
+                            <select id="admin-rumor-type">
+                                <option value="hearsay">Hearsay</option>
+                                <option value="secret">Secret</option>
+                                <option value="crime">Crime</option>
+                                <option value="achievement">Achievement</option>
+                                <option value="scandal">Scandal</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Content</label>
+                            <textarea id="admin-rumor-content" placeholder="What's the word on the street?" rows="2"></textarea>
+                        </div>
+                        <button id="admin-add-rumor-btn" class="btn-primary btn-full">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12 5v14M5 12h14"/>
+                            </svg>
+                            Add Rumor
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Counters Tab -->
+                <div id="admin-tab-counters" class="admin-tab-panel">
+                    <div id="admin-counters-list" class="admin-counters-list">
+                        <!-- Counter rows will be generated dynamically -->
+                    </div>
+                </div>
+
+                <!-- Wipe Tab -->
+                <div id="admin-tab-wipe" class="admin-tab-panel">
+                    <div class="admin-wipe-warning">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/>
+                            <line x1="12" y1="9" x2="12" y2="13"/>
+                            <line x1="12" y1="17" x2="12.01" y2="17"/>
+                        </svg>
+                        <h4>Danger Zone</h4>
+                        <p>This will permanently delete ALL Lifeprint data for this player, including:</p>
+                        <ul>
+                            <li>Timeline memories</li>
+                            <li>Relationships</li>
+                            <li>Reputation & counters</li>
+                            <li>Rumors</li>
+                        </ul>
+                        <p class="admin-wipe-note">This action cannot be undone.</p>
+                    </div>
+                    <button id="admin-wipe-btn" class="btn-danger btn-full">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <path d="M3 6h18"/>
+                            <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
+                            <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+                        </svg>
+                        Wipe All Player Data
+                    </button>
+                </div>
+            </div>
+        </div>
+        <!-- End admin-panel -->
+    </div>
+    <!-- End admin-container -->
+
+    <!-- Settings Panel Container -->
+    <div id="settings-container" class="settings-container nui-hidden">
+        <div class="settings-panel">
+            <!-- Settings Header -->
+            <header class="settings-header">
+                <div class="settings-header-left">
+                    <div class="settings-logo">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/>
+                            <path fill-rule="evenodd" d="M1.323 11.447C2.811 6.976 7.028 3.75 12.001 3.75c4.97 0 9.185 3.223 10.675 7.69.12.362.12.752 0 1.113-1.487 4.471-5.705 7.697-10.677 7.697-4.97 0-9.186-3.223-10.675-7.69a1.762 1.762 0 0 1 0-1.113Z" clip-rule="evenodd"/>
+                        </svg>
+                    </div>
+                    <div class="settings-header-title">
+                        <h1>Privacy Settings</h1>
+                        <span class="settings-subtitle">Control how Lifeprint tracks your activity</span>
+                    </div>
+                </div>
+                <button id="settings-close-btn" class="close-btn" title="Close (ESC)">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M18 6L6 18M6 6l12 12"/>
+                    </svg>
+                </button>
+            </header>
+
+            <!-- Settings Content -->
+            <div class="settings-content">
+                <div class="settings-intro">
+                    <p>Manage which automatic tracking features are enabled. Disabling a feature will prevent Lifeprint from recording that type of activity.</p>
+                </div>
+
+                <!-- Face Reminders Toggle -->
+                <div class="settings-item">
+                    <div class="settings-item-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                            <circle cx="9" cy="7" r="4"/>
+                            <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                            <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                        </svg>
+                    </div>
+                    <div class="settings-item-content">
+                        <div class="settings-item-title">Face Reminders</div>
+                        <div class="settings-item-desc">Get notified when you're near someone you've remembered</div>
+                    </div>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="setting-face-reminders" checked>
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+
+                <!-- Proximity Memories Toggle -->
+                <div class="settings-item">
+                    <div class="settings-item-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <circle cx="12" cy="12" r="3"/>
+                            <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+                        </svg>
+                    </div>
+                    <div class="settings-item-content">
+                        <div class="settings-item-title">Proximity Memories</div>
+                        <div class="settings-item-desc">Automatically record encounters with other players</div>
+                    </div>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="setting-proximity-memories" checked>
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+
+                <!-- Rumor Notifications Toggle -->
+                <div class="settings-item">
+                    <div class="settings-item-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                        </svg>
+                    </div>
+                    <div class="settings-item-content">
+                        <div class="settings-item-title">Rumor Notifications</div>
+                        <div class="settings-item-desc">Receive notifications about new rumors involving you</div>
+                    </div>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="setting-rumor-notifications" checked>
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+
+                <!-- Memory Popups Toggle -->
+                <div class="settings-item">
+                    <div class="settings-item-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                            <polyline points="14 2 14 8 20 8"/>
+                            <line x1="16" y1="13" x2="8" y2="13"/>
+                            <line x1="16" y1="17" x2="8" y2="17"/>
+                        </svg>
+                    </div>
+                    <div class="settings-item-content">
+                        <div class="settings-item-title">Memory Popups</div>
+                        <div class="settings-item-desc">Show "Memory brought up" when near someone with shared history</div>
+                    </div>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="setting-memory-popups" checked>
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+            </div>
+
+            <!-- Settings Footer -->
+            <div class="settings-footer">
+                <button id="settings-save-btn" class="btn-primary btn-full">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+                        <polyline points="17 21 17 13 7 13 7 21"/>
+                        <polyline points="7 3 7 8 15 8"/>
+                    </svg>
+                    Save Settings
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Custom Confirmation Modal -->
+    <div id="confirm-modal" class="confirm-modal hidden">
+        <div class="confirm-modal-backdrop"></div>
+        <div class="confirm-modal-content">
+            <div class="confirm-modal-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"/>
+                    <line x1="12" y1="8" x2="12" y2="12"/>
+                    <line x1="12" y1="16" x2="12.01" y2="16"/>
+                </svg>
+            </div>
+            <div class="confirm-modal-title" id="confirm-title">Confirm Action</div>
+            <div class="confirm-modal-message" id="confirm-message">Are you sure you want to proceed?</div>
+            <div class="confirm-modal-buttons">
+                <button id="confirm-cancel" class="btn-cancel">Cancel</button>
+                <button id="confirm-ok" class="btn-danger">Confirm</button>
+            </div>
+        </div>
+    </div>
+    
+    <script src="app.js"></script>
+</body>
+</html>

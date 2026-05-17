@@ -1,0 +1,108 @@
+Lifeprint — The City Remembers
+Custom Non-Commercial License
+
+Copyright (c) 2026 PET Development
+Built with BLDR.
+
+================================================================================
+
+1. DEFINITIONS
+
+   "The Software" refers to all source code, assets, images, UI, configuration
+   files, SQL files, and documentation contained in this repository, including
+   the Lifeprint resource and any derivative or compiled form of it.
+
+   "You" refers to any individual or entity using, modifying, or
+   redistributing The Software.
+
+   "Commercial Use" means any use of The Software, in whole or in part, that
+   is primarily intended for or directed toward commercial advantage or
+   monetary compensation. This includes, but is not limited to: reselling,
+   sublicensing, paid distribution, paid support of The Software itself, or
+   inclusion in any paid product, pack, leak site, or marketplace listing.
+
+   Running a FiveM server that uses The Software — including servers that
+   accept donations, sell unrelated in-game perks, or operate community
+   subscriptions — is NOT considered Commercial Use of The Software, as long
+   as The Software itself is not the product being sold.
+
+================================================================================
+
+2. GRANT OF RIGHTS
+
+   Subject to the conditions below, You are granted a worldwide,
+   royalty-free, non-exclusive license to:
+
+   (a) Use The Software on your own FiveM server(s).
+   (b) Modify The Software for your own server's use.
+   (c) Share unmodified copies of The Software privately with collaborators
+       working on the same server, provided this LICENSE file is included.
+
+================================================================================
+
+3. CONDITIONS
+
+   (a) ATTRIBUTION — All copies and derivatives of The Software must retain:
+       - This LICENSE file, unmodified.
+       - The copyright notice above.
+       - Visible credit to "PET Development" and "BLDR" in the README,
+         in the in-game UI (where credits are shown), and/or in the
+         fxmanifest author/description field.
+
+   (b) NO RESALE OR REDISTRIBUTION — You may NOT:
+       - Sell, resell, sublicense, rent, or lease The Software.
+       - Upload The Software to Tebex, any marketplace, leak site, or
+         public download mirror.
+       - Repackage The Software under a different name and distribute it.
+       - Include The Software in any paid bundle, paid script pack, or
+         commercial release.
+
+   (c) NO REMOVAL OF CREDITS — You may NOT remove, obscure, or alter the
+       author credits, the LICENSE file, or any copyright notice contained
+       in The Software.
+
+   (d) MODIFICATIONS — You may modify The Software for use on your own
+       server. Modified versions are still bound by this license and may
+       not be redistributed publicly. Private forks shared among server
+       staff are permitted.
+
+================================================================================
+
+4. CONCEPT vs. CODE
+
+   This license covers The Software — its source code, assets, UI design,
+   and structural implementation. It does NOT, and legally cannot, claim
+   ownership over the general concept of a "character memory system" or
+   any underlying gameplay idea. Independently developed scripts that
+   share similar concepts but do not copy this code, assets, or UI are
+   not subject to this license.
+
+================================================================================
+
+5. DISCLAIMER OF WARRANTY
+
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+   OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT.
+
+   IN NO EVENT SHALL THE AUTHORS, PET DEVELOPMENT, OR BLDR BE LIABLE FOR
+   ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER IN AN ACTION OF
+   CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF, OR IN CONNECTION
+   WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+================================================================================
+
+6. TERMINATION
+
+   Any violation of the conditions in Section 3 immediately and
+   automatically terminates Your rights under this license. Upon
+   termination, You must cease all use of The Software and destroy all
+   copies in your possession.
+
+================================================================================
+
+Lifeprint — The City Remembers
+Concept and ideas by PET Development.
+Made and built by BLDR.
+
+The brain remembers, so you don't have to.
