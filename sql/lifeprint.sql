@@ -205,6 +205,7 @@ CREATE TABLE IF NOT EXISTS `lifeprint_relationships` (
     `identifier` VARCHAR(100) NOT NULL COMMENT 'Player identifier',
     `target_identifier` VARCHAR(100) NOT NULL COMMENT 'Target player identifier',
     `target_name` VARCHAR(100) NULL COMMENT 'Cached target name for display',
+    `display_alias` VARCHAR(100) NULL COMMENT 'Custom alias/nickname for display',
     `relationship_value` INT NOT NULL DEFAULT 0 COMMENT 'Relationship score (-100 to 100)',
     `relationship_type` VARCHAR(50) NOT NULL DEFAULT 'stranger' COMMENT 'Type: stranger, friend, enemy, etc.',
     `first_met` BIGINT NULL COMMENT 'Unix timestamp of first meeting',
@@ -243,10 +244,24 @@ BEGIN
     DECLARE photo_exists INT DEFAULT 0;
     DECLARE avatar_url_exists INT DEFAULT 0;
     DECLARE headshot_txd_exists INT DEFAULT 0;
+    DECLARE display_alias_exists INT DEFAULT 0;
     DECLARE memory_strength_exists INT DEFAULT 0;
     DECLARE negative_events_exists INT DEFAULT 0;
     DECLARE is_demo_exists INT DEFAULT 0;
     DECLARE created_at_index_exists INT DEFAULT 0;
+
+    -- Check for display_alias column
+    SELECT COUNT(*) INTO display_alias_exists 
+    FROM information_schema.columns 
+    WHERE table_schema = DATABASE() 
+    AND table_name = 'lifeprint_relationships' 
+    AND column_name = 'display_alias';
+
+    IF display_alias_exists = 0 THEN
+        ALTER TABLE `lifeprint_relationships` 
+        ADD COLUMN `display_alias` VARCHAR(100) NULL COMMENT 'Custom alias/nickname for display' 
+        AFTER `target_name`;
+    END IF;
     
     -- Check for notes column
     SELECT COUNT(*) INTO notes_exists 
@@ -379,6 +394,24 @@ END //
 DELIMITER ;
 
 CALL `lifeprint_migrate_relationships`();
+
+-- ============================================================================
+-- Relationship History Table
+-- Tracks meaningful changes and moments for each relationship
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS `lifeprint_relationship_history` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `identifier` VARCHAR(100) NOT NULL COMMENT 'Owner player identifier',
+    `target_identifier` VARCHAR(100) NOT NULL COMMENT 'Related target identifier',
+    `event_type` VARCHAR(50) NOT NULL COMMENT 'relationship, note, alias, face_memory, photo, etc.',
+    `summary` VARCHAR(255) NOT NULL COMMENT 'Short human-readable summary',
+    `metadata` JSON NULL COMMENT 'Optional structured event metadata',
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX `idx_identifier_target` (`identifier`, `target_identifier`),
+    INDEX `idx_event_type` (`event_type`),
+    INDEX `idx_created_at` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================================
 -- Reputation Table

@@ -17,9 +17,6 @@
 
 ## About
 
-bldr: https://discord.gg/bldr
-pet-devlopment: https://discord.gg/pet-scripts
-
 I’m excited to finally submit **Lifeprint — The City Remembers** for the **BLDR contest**.
 
 This script was **made and built by BLDR**, with the concept, ideas, design direction, and project shepherding by **PET Development**. I poured in credits, my own money, long hours, sweat, and time away from other things to get it pushed out in time. It’s not perfect, and there are still things I want to polish and expand on — but looking at what it became, every bit of it was worth it.

@@ -44,6 +44,50 @@ local function GetPerfConfig(key, default)
     return default
 end
 
+local PerfStats = {
+    cache = {
+        identifierHits = 0,
+        identifierMisses = 0
+    },
+    getData = {
+        calls = 0,
+        lastMs = 0,
+        totalMs = 0,
+        maxMs = 0
+    },
+    addMemory = {
+        calls = 0,
+        lastMs = 0,
+        totalMs = 0,
+        maxMs = 0,
+        deduped = 0
+    },
+    relationshipHistoryWrites = 0,
+    socialLinkUpdates = 0
+}
+
+local function GetNowMs()
+    local ok, value = pcall(function()
+        return GetGameTimer()
+    end)
+
+    if ok and value then
+        return value
+    end
+
+    return math.floor(os.clock() * 1000)
+end
+
+local function RecordPerfMetric(metricName, durationMs)
+    local bucket = PerfStats[metricName]
+    if not bucket then return end
+
+    bucket.calls = (bucket.calls or 0) + 1
+    bucket.lastMs = math.floor(durationMs or 0)
+    bucket.totalMs = (bucket.totalMs or 0) + bucket.lastMs
+    bucket.maxMs = math.max(bucket.maxMs or 0, bucket.lastMs)
+end
+
 -- Get cached identifier (avoids repeated framework calls)
 local function GetCachedIdentifier(source)
     if not source or type(source) ~= 'number' or source <= 0 then return nil end
@@ -55,9 +99,12 @@ local function GetCachedIdentifier(source)
     if IdentifierCache[source] then
         local cached = IdentifierCache[source]
         if (now - cached.timestamp) < ttl then
+            PerfStats.cache.identifierHits = PerfStats.cache.identifierHits + 1
             return cached.identifier, cached.name
         end
     end
+
+    PerfStats.cache.identifierMisses = PerfStats.cache.identifierMisses + 1
     
     -- Resolve and cache
     local identifier = Bridge.GetIdentifier(source)
@@ -133,6 +180,30 @@ local function ValidateSource(source)
         return false, 'Invalid source'
     end
     return true, nil
+end
+
+local function UrlEncode(value)
+    if value == nil then return '' end
+    local s = tostring(value)
+    s = s:gsub('\n', '\r\n')
+    s = s:gsub('([^%w%-_%.~])', function(c)
+        return string.format('%%%02X', string.byte(c))
+    end)
+    return s
+end
+
+local function GeneratePersistentAvatarUrl(seed)
+    local safeSeed = seed and tostring(seed) or 'Unknown'
+    return 'https://api.dicebear.com/7.x/avataaars/svg?seed=' .. UrlEncode(safeSeed)
+end
+
+local function DecodeJsonSafely(value)
+    if type(value) == 'table' then return value end
+    if type(value) ~= 'string' or value == '' then return nil end
+
+    local ok, decoded = pcall(json.decode, value)
+    if ok then return decoded end
+    return nil
 end
 
 -- ============================================================================
@@ -238,6 +309,67 @@ local function GetPlayerRelationships(identifier)
     end)
     
     return result or {}
+end
+
+local function GetRelationshipHistoryMap(identifier, maxPerTarget)
+    if not identifier then return {} end
+
+    maxPerTarget = maxPerTarget or 5
+    local historyLimit = math.max(25, (GetPerfConfig('maxRelationships', 50) * maxPerTarget))
+
+    local result = SafeQuery(function()
+        return MySQL.query.await([[
+            SELECT target_identifier, event_type, summary, metadata, created_at
+            FROM lifeprint_relationship_history
+            WHERE identifier = ?
+            ORDER BY created_at DESC
+            LIMIT ?
+        ]], { identifier, historyLimit })
+    end)
+
+    local grouped = {}
+    for _, row in ipairs(result or {}) do
+        local targetIdentifier = row.target_identifier or 'unknown'
+        grouped[targetIdentifier] = grouped[targetIdentifier] or {}
+
+        if #grouped[targetIdentifier] < maxPerTarget then
+            table.insert(grouped[targetIdentifier], {
+                eventType = row.event_type,
+                summary = row.summary,
+                metadata = DecodeJsonSafely(row.metadata),
+                createdAt = row.created_at
+            })
+        end
+    end
+
+    return grouped
+end
+
+local function AddRelationshipHistory(identifier, targetIdentifier, eventType, summary, metadata)
+    if not identifier or not targetIdentifier or not eventType or not summary then
+        return false
+    end
+
+    local result = SafeQuery(function()
+        return MySQL.insert.await([[
+            INSERT INTO lifeprint_relationship_history
+            (identifier, target_identifier, event_type, summary, metadata)
+            VALUES (?, ?, ?, ?, ?)
+        ]], {
+            identifier,
+            targetIdentifier,
+            eventType,
+            string.sub(summary, 1, 255),
+            metadata and json.encode(metadata) or nil
+        })
+    end)
+
+    if result then
+        PerfStats.relationshipHistoryWrites = PerfStats.relationshipHistoryWrites + 1
+        return true
+    end
+
+    return false
 end
 
 local function GetPlayerReputation(identifier)
@@ -567,6 +699,7 @@ local function UpdateSocialLink(identifier, targetIdentifier, targetName)
     if success then
         -- Set cooldown
         SocialWebCooldowns[cooldownKey] = os.time()
+        PerfStats.socialLinkUpdates = PerfStats.socialLinkUpdates + 1
         DebugLog('Social link updated: ' .. identifier .. ' -> ' .. targetIdentifier)
         
         -- Check for rumor generation
@@ -649,10 +782,19 @@ end
 
 local function GetPlayerLifeprint(identifier, isAdmin)
     DebugLog('GetPlayerLifeprint for: ' .. tostring(identifier) .. (isAdmin and ' (admin)' or ''))
+
+    local relationships = GetPlayerRelationships(identifier) or {}
+    local historyMap = GetRelationshipHistoryMap(identifier, 5)
+
+    for _, rel in ipairs(relationships) do
+        rel.displayName = rel.display_alias or rel.target_name or rel.target_identifier or 'Unknown'
+        rel.avatar_url = rel.avatar_url or GeneratePersistentAvatarUrl(rel.target_identifier or rel.displayName)
+        rel.history = historyMap[rel.target_identifier] or {}
+    end
     
     return {
         memories = GetPlayerMemories(identifier, isAdmin) or {},
-        relationships = GetPlayerRelationships(identifier) or {},
+        relationships = relationships,
         reputation = GetPlayerReputation(identifier) or {},
         rumors = GetPlayerRumors(identifier) or {},
         socialLinks = GetPlayerSocialLinks(identifier) or {},
@@ -740,6 +882,91 @@ end
 -- Memory Functions
 -- ============================================================================
 
+local MEMORY_DEDUPE_WINDOWS = {
+    gunshots = 180,
+    npc_assault = 300,
+    npc_kill = 300,
+    npc_vehicle_theft = 600,
+    reckless_driving = 300,
+    drug_deal = 300,
+    injury = 300,
+    vehicle_hit = 300,
+    gunshot = 300
+}
+
+local function GetMemoryDedupeWindow(memoryType)
+    return MEMORY_DEDUPE_WINDOWS[memoryType or '']
+end
+
+local function TryMergeRecentMemory(identifier, data, visibility)
+    local dedupeWindow = GetMemoryDedupeWindow(data.memoryType)
+    if not dedupeWindow then return false, nil end
+
+    local recent = SafeQuery(function()
+        return MySQL.query.await([[
+            SELECT id, metadata
+            FROM lifeprint_memories
+            WHERE identifier = ?
+              AND memory_type = ?
+              AND COALESCE(target_identifier, '') = COALESCE(?, '')
+              AND COALESCE(location, '') = COALESCE(?, '')
+              AND visibility = ?
+              AND timestamp >= ?
+            ORDER BY timestamp DESC
+            LIMIT 1
+        ]], {
+            identifier,
+            data.memoryType,
+            data.targetIdentifier or '',
+            data.location or '',
+            visibility,
+            (data.timestamp or os.time()) - dedupeWindow
+        })
+    end)
+
+    if not recent or #recent == 0 then
+        return false, nil
+    end
+
+    local row = recent[1]
+    local metadata = DecodeJsonSafely(row.metadata) or {}
+    metadata.repeat_count = (tonumber(metadata.repeat_count) or 1) + 1
+    metadata.last_repeat_at = data.timestamp or os.time()
+
+    if type(data.metadata) == 'table' then
+        for key, value in pairs(data.metadata) do
+            metadata[key] = value
+        end
+    end
+
+    local updated = SafeQuery(function()
+        return MySQL.update.await([[
+            UPDATE lifeprint_memories
+            SET target_name = COALESCE(?, target_name),
+                title = COALESCE(?, title),
+                description = ?,
+                timestamp = ?,
+                metadata = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+        ]], {
+            data.targetName or nil,
+            data.title or nil,
+            data.description or '',
+            data.timestamp or os.time(),
+            json.encode(metadata),
+            row.id
+        })
+    end)
+
+    if updated and updated > 0 then
+        PerfStats.addMemory.deduped = PerfStats.addMemory.deduped + 1
+        return true, row.id
+    end
+
+    return false, nil
+end
+
 local function AddMemory(source, memoryType, title, description, location, relatedIdentifier, relatedName, visibility)
     -- Handle both old (identifier, data) and new (source, params...) calling patterns
     local identifier, data
@@ -755,6 +982,7 @@ local function AddMemory(source, memoryType, title, description, location, relat
         if not identifier then return false, 'Invalid source' end
         data = {
             memoryType = memoryType,
+            title = title,
             description = description or title,
             location = location,
             targetIdentifier = relatedIdentifier,
@@ -786,16 +1014,26 @@ local function AddMemory(source, memoryType, title, description, location, relat
     if not validType then
         data.memoryType = 'other'
     end
+
+    local startMs = GetNowMs()
+
+    local merged, mergedId = TryMergeRecentMemory(identifier, data, visibility)
+    if merged then
+        RecordPerfMetric('addMemory', GetNowMs() - startMs)
+        return true, mergedId
+    end
     
     local result = SafeQuery(function()
         return MySQL.insert.await([[
             INSERT INTO lifeprint_memories 
-            (identifier, target_identifier, memory_type, description, location, x, y, z, timestamp, visibility, metadata, is_demo)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+            (identifier, target_identifier, target_name, memory_type, title, description, location, x, y, z, timestamp, visibility, metadata, is_demo)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
         ]], {
             identifier,
             data.targetIdentifier or nil,
+            data.targetName or nil,
             data.memoryType,
+            data.title or nil,
             data.description or '',
             data.location or nil,
             data.x or nil,
@@ -809,6 +1047,7 @@ local function AddMemory(source, memoryType, title, description, location, relat
     
     if result then
         DebugLog(('Added memory for %s (visibility: %s)'):format(identifier, visibility))
+        RecordPerfMetric('addMemory', GetNowMs() - startMs)
         
         -- Send journal notification
         SendJournalNotification(identifier, 'memoryAdded', {
@@ -846,37 +1085,47 @@ local function AddRelationship(identifier, data)
     -- Clamp value
     local value = math.max(-100, math.min(100, data.value or 0))
     local now = os.time()
+    local persistentAvatarUrl = data.avatarUrl or GeneratePersistentAvatarUrl(data.targetIdentifier or data.targetName)
     
     -- Use UPSERT logic (INSERT ... ON DUPLICATE KEY UPDATE)
     -- This is atomic and prevents race conditions
     local result = SafeQuery(function()
         return MySQL.insert.await([[
             INSERT INTO lifeprint_relationships
-            (identifier, target_identifier, target_name, relationship_value, relationship_type, first_met, last_interaction, interaction_count, notes, first_location, is_demo)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, 0)
+            (identifier, target_identifier, target_name, display_alias, relationship_value, relationship_type, first_met, last_interaction, interaction_count, notes, first_location, avatar_url, is_demo)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, 0)
             ON DUPLICATE KEY UPDATE
                 relationship_value = LEAST(100, GREATEST(-100, relationship_value + ?)),
                 relationship_type = COALESCE(VALUES(relationship_type), relationship_type),
                 last_interaction = VALUES(last_interaction),
                 interaction_count = interaction_count + 1,
                 notes = COALESCE(VALUES(notes), notes),
-                target_name = COALESCE(VALUES(target_name), target_name)
+                target_name = COALESCE(VALUES(target_name), target_name),
+                display_alias = COALESCE(VALUES(display_alias), display_alias),
+                avatar_url = COALESCE(avatar_url, VALUES(avatar_url))
         ]], {
             identifier,
             data.targetIdentifier,
             data.targetName or nil,
+            data.displayAlias or nil,
             value,
             data.relationshipType or 'stranger',
             now,
             now,
             data.notes and string.sub(data.notes, 1, 200) or nil,
             data.location or nil,
+            persistentAvatarUrl,
             data.change or value  -- For the increment in ON DUPLICATE KEY UPDATE
         })
     end)
     
     if result then
         DebugLog(('Upserted relationship: %s -> %s'):format(identifier, data.targetIdentifier))
+        AddRelationshipHistory(identifier, data.targetIdentifier, 'relationship', ('Relationship changed to %s (%+d)'):format(GetRelationshipLabel(data.relationshipType or 'stranger'), value), {
+            relationshipType = data.relationshipType or 'stranger',
+            value = value,
+            targetName = data.targetName
+        })
         
         -- Send journal notification
         local relationshipLabel = GetRelationshipLabel(data.relationshipType or 'stranger')
@@ -931,6 +1180,41 @@ local function UpdateRelationshipNotes(identifier, targetIdentifier, notes)
             UPDATE lifeprint_relationships SET notes = ? WHERE id = ?
         ]], { truncatedNotes, existing[1].id })
     end)
+
+    AddRelationshipHistory(identifier, targetIdentifier, 'note', truncatedNotes and 'Updated relationship note' or 'Cleared relationship note', {
+        hasNote = truncatedNotes ~= nil
+    })
+
+    return true
+end
+
+local function SaveRelationshipAlias(identifier, targetIdentifier, alias)
+    if not identifier or not targetIdentifier then
+        return false, 'Missing identifier or target'
+    end
+
+    local existing = SafeQuery(function()
+        return MySQL.query.await([[
+            SELECT id FROM lifeprint_relationships
+            WHERE identifier = ? AND target_identifier = ?
+        ]], { identifier, targetIdentifier })
+    end)
+
+    if not existing or #existing == 0 then
+        return false, 'Relationship not found'
+    end
+
+    local truncatedAlias = alias and #alias > 0 and string.sub(alias, 1, 100) or nil
+
+    SafeQuery(function()
+        return MySQL.update.await([[
+            UPDATE lifeprint_relationships SET display_alias = ? WHERE id = ?
+        ]], { truncatedAlias, existing[1].id })
+    end)
+
+    AddRelationshipHistory(identifier, targetIdentifier, 'alias', truncatedAlias and ('Set alias to %s'):format(truncatedAlias) or 'Cleared relationship alias', {
+        alias = truncatedAlias
+    })
     
     return true
 end
@@ -2080,6 +2364,7 @@ RegisterNetEvent('lifeprint:server:getData', function()
         TriggerClientEvent('lifeprint:client:openNUI', src, {
             player = { identifier = 'unknown', name = GetPlayerName(src) or 'Unknown', lastUpdated = os.time() },
             memories = {}, relationships = {}, reputation = {}, rumors = {},
+            socialLinks = {},
             counters = {}, tags = {},
             characterRead = (Config and Config.CharacterReadTemplates and Config.CharacterReadTemplates.neutral) or '',
             config = {
@@ -2094,6 +2379,7 @@ RegisterNetEvent('lifeprint:server:getData', function()
     end
     
     -- Get data with pcall wrapper
+    local startMs = GetNowMs()
     local ok, err = pcall(function()
         local playerName = Bridge.GetCharacterName(src) or GetPlayerName(src) or 'Unknown'
         local lifeprint = GetPlayerLifeprint(identifier)
@@ -2104,9 +2390,17 @@ RegisterNetEvent('lifeprint:server:getData', function()
         -- Add names and photo fields
         for _, rel in ipairs(lifeprint.relationships) do
             rel.targetName = rel.target_name or (Bridge.GetCharacterNameByIdentifier and Bridge.GetCharacterNameByIdentifier(rel.target_identifier)) or rel.target_identifier
+            rel.displayName = rel.display_alias or rel.targetName
             -- Ensure photo/avatar fields are set (prefer photo over avatar_url)
             rel.photo = rel.photo or nil
-            rel.avatar_url = rel.avatar_url or nil
+            rel.avatar_url = rel.avatar_url or GeneratePersistentAvatarUrl(rel.target_identifier or rel.displayName)
+
+            -- Provide a deterministic fallback avatar when no stored photo exists.
+            if (not rel.photo or rel.photo == '') and (not rel.avatar_url or rel.avatar_url == '') then
+                local seed = rel.targetName or rel.target_name or rel.target_identifier or 'Unknown'
+                rel.avatar_url = GeneratePersistentAvatarUrl(seed)
+            end
+
             rel.is_face_memory = rel.is_face_memory or 0
             rel.memory_strength = rel.memory_strength or 1
             -- Debug log photo data
@@ -2120,6 +2414,10 @@ RegisterNetEvent('lifeprint:server:getData', function()
             end
         end
         for _, mem in ipairs(lifeprint.memories) do
+            mem.metadata = DecodeJsonSafely(mem.metadata) or mem.metadata
+            if type(mem.metadata) == 'table' then
+                mem.repeatCount = tonumber(mem.metadata.repeat_count) or 1
+            end
             if mem.target_identifier then
                 mem.targetName = (Bridge.GetCharacterNameByIdentifier and Bridge.GetCharacterNameByIdentifier(mem.target_identifier)) or mem.target_identifier
             end
@@ -2145,6 +2443,7 @@ RegisterNetEvent('lifeprint:server:getData', function()
             relationships = lifeprint.relationships,
             reputation = lifeprint.reputation,
             rumors = lifeprint.rumors,
+            socialLinks = lifeprint.socialLinks,
             counters = counters or {},
             tags = tags,
             characterRead = characterRead,
@@ -2160,6 +2459,8 @@ RegisterNetEvent('lifeprint:server:getData', function()
                 tagStyles = Config and Config.ReputationTagStyles or {}
             }
         })
+
+        RecordPerfMetric('getData', GetNowMs() - startMs)
     end)
     
     if not ok then
@@ -2168,10 +2469,12 @@ RegisterNetEvent('lifeprint:server:getData', function()
         TriggerClientEvent('lifeprint:client:openNUI', src, {
             player = { identifier = identifier or 'error', name = GetPlayerName(src) or 'Unknown', lastUpdated = os.time() },
             memories = {}, relationships = {}, reputation = {}, rumors = {},
+            socialLinks = {},
             counters = {}, tags = {},
             characterRead = 'Error loading data. Please try again.',
             config = {}
         })
+        RecordPerfMetric('getData', GetNowMs() - startMs)
     end
 end)
 
@@ -2691,6 +2994,26 @@ RegisterNetEvent('lifeprint:server:saveRelationshipNote', function(data)
     end
 end)
 
+RegisterNetEvent('lifeprint:server:saveRelationshipAlias', function(data)
+    local src = source
+    if not ValidateSource(src) then return end
+
+    local identifier = Bridge.GetIdentifier(src)
+    if not identifier then return end
+
+    if not data or not data.targetIdentifier then
+        if Bridge.Notify then Bridge.Notify(src, 'No target specified', 'error') end
+        return
+    end
+
+    local success, err = SaveRelationshipAlias(identifier, data.targetIdentifier, data.alias)
+    if success then
+        if Bridge.Notify then Bridge.Notify(src, 'Alias saved', 'success') end
+    else
+        if Bridge.Notify then Bridge.Notify(src, 'Failed: ' .. (err or 'unknown'), 'error') end
+    end
+end)
+
 -- Save face photo for a relationship
 RegisterNetEvent('lifeprint:server:saveFacePhoto', function(data)
     local src = source
@@ -2754,6 +3077,7 @@ RegisterNetEvent('lifeprint:server:saveFacePhoto', function(data)
     
     if success then
         if Bridge.Notify then Bridge.Notify(src, 'Face photo saved', 'success') end
+        AddRelationshipHistory(identifier, data.targetIdentifier, 'photo', 'Saved a persistent face photo', nil)
         DebugLog(('Face photo saved for %s -> %s'):format(identifier, data.targetIdentifier))
     else
         if Bridge.Notify then Bridge.Notify(src, 'Failed to save photo', 'error') end
@@ -2813,6 +3137,7 @@ RegisterNetEvent('lifeprint:server:setFacePhoto', function(targetServerId, photo
     end
     
     if Bridge.Notify then Bridge.Notify(src, 'Face photo saved successfully', 'success') end
+    AddRelationshipHistory(identifier, targetIdentifier, 'photo', 'Saved a persistent face photo', nil)
     DebugLog(('Face photo set via command: %s -> %s'):format(identifier, targetIdentifier))
 end)
 
@@ -4441,17 +4766,21 @@ local function SaveFaceMemory(identifier, targetIdentifier, targetName, note, lo
             if headshotTxd and headshotTxd ~= '' then
                 return MySQL.update.await([[
                     UPDATE lifeprint_relationships
-                    SET notes = ?, first_location = ?, last_interaction = ?, target_name = ?, headshot_txd = ?
+                    SET notes = ?, first_location = ?, last_interaction = ?, target_name = ?, headshot_txd = ?, avatar_url = COALESCE(avatar_url, ?)
                     WHERE id = ?
-                ]], { note, location, os.time(), targetName, headshotTxd, existing.id })
+                ]], { note, location, os.time(), targetName, headshotTxd, GeneratePersistentAvatarUrl(targetIdentifier or targetName), existing.id })
             else
                 return MySQL.update.await([[
                     UPDATE lifeprint_relationships
-                    SET notes = ?, first_location = ?, last_interaction = ?, target_name = ?
+                    SET notes = ?, first_location = ?, last_interaction = ?, target_name = ?, avatar_url = COALESCE(avatar_url, ?)
                     WHERE id = ?
-                ]], { note, location, os.time(), targetName, existing.id })
+                ]], { note, location, os.time(), targetName, GeneratePersistentAvatarUrl(targetIdentifier or targetName), existing.id })
             end
         end)
+        AddRelationshipHistory(identifier, targetIdentifier, 'face_memory', 'Updated remembered face details', {
+            location = location,
+            targetName = targetName
+        })
         DebugLog(('Updated face memory: %s -> %s'):format(identifier, targetIdentifier))
         return true, existing.id
     end
@@ -4460,8 +4789,8 @@ local function SaveFaceMemory(identifier, targetIdentifier, targetName, note, lo
     local result = SafeQuery(function()
         return MySQL.insert.await([[
             INSERT INTO lifeprint_relationships
-            (identifier, target_identifier, target_name, relationship_value, relationship_type, first_met, last_interaction, notes, first_location, is_face_memory, headshot_txd, is_demo)
-            VALUES (?, ?, ?, 0, 'remembered_face', ?, ?, ?, ?, 1, ?, 0)
+            (identifier, target_identifier, target_name, relationship_value, relationship_type, first_met, last_interaction, notes, first_location, is_face_memory, headshot_txd, avatar_url, is_demo)
+            VALUES (?, ?, ?, 0, 'remembered_face', ?, ?, ?, ?, 1, ?, ?, 0)
         ]], {
             identifier,
             targetIdentifier,
@@ -4470,11 +4799,16 @@ local function SaveFaceMemory(identifier, targetIdentifier, targetName, note, lo
             os.time(),
             note and string.sub(note, 1, 200) or nil,
             location,
-            headshotTxd
+            headshotTxd,
+            GeneratePersistentAvatarUrl(targetIdentifier or targetName)
         })
     end)
     
     if result then
+        AddRelationshipHistory(identifier, targetIdentifier, 'face_memory', 'Remembered this face', {
+            location = location,
+            targetName = targetName
+        })
         DebugLog(('Created face memory: %s -> %s'):format(identifier, targetIdentifier))
         return true, result
     end
@@ -4687,9 +5021,9 @@ RegisterNetEvent('lifeprint:server:updateFacePhoto', function(data)
     SafeQuery(function()
         MySQL.update.await([[
             UPDATE lifeprint_relationships
-            SET headshot_txd = ?, last_interaction = ?
+            SET headshot_txd = ?, avatar_url = COALESCE(avatar_url, ?), last_interaction = ?
             WHERE id = ?
-        ]], { headshotTxd, os.time(), existing.id })
+        ]], { headshotTxd, GeneratePersistentAvatarUrl(targetIdentifier or existing.target_name), os.time(), existing.id })
     end)
     
     -- Update client cache
@@ -4701,6 +5035,11 @@ RegisterNetEvent('lifeprint:server:updateFacePhoto', function(data)
     if Bridge.Notify then
         Bridge.Notify(src, 'Photo updated for ' .. targetName, 'success')
     end
+
+    AddRelationshipHistory(identifier, targetIdentifier, 'photo', 'Updated runtime face photo', {
+        runtime = true,
+        targetName = targetName
+    })
     
     DebugLog(('Face photo updated: %s -> %s, headshot: %s'):format(identifier, targetIdentifier, headshotTxd))
 end)
@@ -5494,7 +5833,31 @@ local function GatherDebugInfo(src)
             memories = 0,
             relationships = 0,
             rumors = 0,
+            socialLinks = 0,
             reputationRow = false
+        },
+
+        perf = {
+            getData = {
+                calls = PerfStats.getData.calls,
+                lastMs = PerfStats.getData.lastMs,
+                avgMs = PerfStats.getData.calls > 0 and math.floor(PerfStats.getData.totalMs / PerfStats.getData.calls) or 0,
+                maxMs = PerfStats.getData.maxMs
+            },
+            addMemory = {
+                calls = PerfStats.addMemory.calls,
+                lastMs = PerfStats.addMemory.lastMs,
+                avgMs = PerfStats.addMemory.calls > 0 and math.floor(PerfStats.addMemory.totalMs / PerfStats.addMemory.calls) or 0,
+                maxMs = PerfStats.addMemory.maxMs,
+                deduped = PerfStats.addMemory.deduped
+            },
+            cache = {
+                identifierHits = PerfStats.cache.identifierHits,
+                identifierMisses = PerfStats.cache.identifierMisses,
+                identifierCacheSize = 0
+            },
+            relationshipHistoryWrites = PerfStats.relationshipHistoryWrites,
+            socialLinkUpdates = PerfStats.socialLinkUpdates
         },
         
         -- NUI state (client will update this)
@@ -5576,6 +5939,10 @@ local function GatherDebugInfo(src)
     
     -- Get database status
     debugInfo.database = GetOxmysqlStatus()
+
+    for _, _ in pairs(IdentifierCache or {}) do
+        debugInfo.perf.cache.identifierCacheSize = debugInfo.perf.cache.identifierCacheSize + 1
+    end
     
     -- Get data counts if identifier exists
     if debugInfo.player.identifier then
@@ -5602,6 +5969,13 @@ local function GatherDebugInfo(src)
             local result = MySQL.query.await('SELECT COUNT(*) as count FROM lifeprint_rumors WHERE identifier = ?', { id })
             if result and result[1] then
                 debugInfo.counts.rumors = result[1].count or 0
+            end
+        end)
+
+        SafeQuery(function()
+            local result = MySQL.query.await('SELECT COUNT(*) as count FROM lifeprint_social_links WHERE identifier = ?', { id })
+            if result and result[1] then
+                debugInfo.counts.socialLinks = result[1].count or 0
             end
         end)
         

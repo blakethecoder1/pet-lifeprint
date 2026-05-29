@@ -471,6 +471,37 @@
         return `background: linear-gradient(135deg, ${color1}, ${color2});`;
     }
 
+    function getHeadshotImageSources(headshotTxd) {
+        if (!headshotTxd || typeof headshotTxd !== 'string') return [];
+        const txd = headshotTxd.trim();
+        if (!txd) return [];
+        return [
+            `https://nui-img/${txd}/${txd}`,
+            `nui://${txd}/${txd}`
+        ];
+    }
+
+    function getImageSourceFromRelationship(rel) {
+        if (!rel) return { primary: null, fallback: null, useHeadshot: false };
+
+        const headshotSources = getHeadshotImageSources(rel.headshot_txd);
+        const photoUrl = (rel.photo || rel.avatar_url || '').trim();
+
+        if (headshotSources.length > 0) {
+            return {
+                primary: headshotSources[0],
+                fallback: photoUrl || headshotSources[1] || null,
+                useHeadshot: true
+            };
+        }
+
+        return {
+            primary: photoUrl || null,
+            fallback: null,
+            useHeadshot: false
+        };
+    }
+
     function getRelationshipType(value) {
         const types = state.config?.relationshipTypes || {};
         for (const [key, type] of Object.entries(types)) {
@@ -677,32 +708,23 @@
             const firstLocation = rel.first_location || '';
             const firstMet = rel.first_met ? formatDate(rel.first_met) : '';
             
-            // Photo handling - prioritize: headshot_txd (game texture) > photo (URL) > avatar_url > initials
-            const headshotTxd = rel.headshot_txd || null;
-            const photoUrl = rel.photo || rel.avatar_url || null;
+            // Photo handling - prioritize: headshot texture > photo URL > initials
+            const imageSources = getImageSourceFromRelationship(rel);
             const initials = getInitials(rel.targetName);
             const photoStyle = getPhotoStyle(rel.targetName);
-            
-            // Determine final image source
-            // headshot_txd is a FiveM runtime texture - needs special nui:// URL format
-            let finalImgSrc = null;
-            let useHeadshot = false;
-            if (headshotTxd && headshotTxd !== '') {
-                finalImgSrc = `nui://${headshotTxd}/${headshotTxd}`;
-                useHeadshot = true;
-            } else if (photoUrl) {
-                finalImgSrc = photoUrl;
-            }
+            const finalImgSrc = imageSources.primary;
+            const fallbackImgSrc = imageSources.fallback;
+            const useHeadshot = imageSources.useHeadshot;
             
             // Debug log photo data
-            console.log(`[Lifeprint] Relationship ${rel.targetName}: headshot=${headshotTxd || 'none'}, photo=${photoUrl || 'none'}, final=${finalImgSrc || 'initials'}`);
+            console.log(`[Lifeprint] Relationship ${rel.targetName}: headshot=${rel.headshot_txd || 'none'}, photo=${rel.photo || rel.avatar_url || 'none'}, final=${finalImgSrc || 'initials'}`);
             
             return `
                 <div class="relationship-card ${isFaceMemory ? 'face-memory-card' : ''}" data-target="${rel.target_identifier}" style="animation-delay: ${index * 0.05}s">
                     <div class="relationship-header">
                         <div class="relationship-avatar" style="${finalImgSrc ? '' : photoStyle}">
                             ${finalImgSrc 
-                                ? `<img src="${finalImgSrc}" alt="${rel.targetName}" class="relationship-avatar-img${useHeadshot ? ' headshot-texture' : ''}" onerror="console.error('[Lifeprint] Image failed to load:', this.src);this.style.display='none';this.nextElementSibling.style.display='flex';" /><div class="relationship-avatar-fallback" style="display:none;${photoStyle}">${initials}</div>`
+                                ? `<img src="${finalImgSrc}" data-fallback-src="${fallbackImgSrc || ''}" alt="${rel.targetName}" class="relationship-avatar-img${useHeadshot ? ' headshot-texture' : ''}" onerror="if(this.dataset.fallbackSrc && this.src!==this.dataset.fallbackSrc){console.warn('[Lifeprint] Primary image failed, trying fallback:', this.dataset.fallbackSrc);this.src=this.dataset.fallbackSrc;this.dataset.fallbackSrc='';return;}console.error('[Lifeprint] Image failed to load:', this.src);this.style.display='none';this.nextElementSibling.style.display='flex';" /><div class="relationship-avatar-fallback" style="display:none;${photoStyle}">${initials}</div>`
                                 : `<span class="relationship-avatar-initials">${initials}</span>`
                             }
                         </div>
@@ -2987,20 +3009,26 @@
         }
         
         // Check if we have a headshot texture to display
-        const hasHeadshot = data.headshotTxd && data.headshotTxd !== '';
+        const headshotSources = getHeadshotImageSources(data.headshotTxd);
+        const hasHeadshot = headshotSources.length > 0;
         
         if (hasHeadshot) {
             console.log('[Lifeprint] Rendering headshot texture:', data.headshotTxd);
             
             // Show the image element with headshot texture
             if (elements.playerPhotoImg) {
-                const headshotUrl = `nui://${data.headshotTxd}/${data.headshotTxd}`;
-                elements.playerPhotoImg.src = headshotUrl;
+                elements.playerPhotoImg.src = headshotSources[0];
                 elements.playerPhotoImg.classList.remove('hidden');
                 elements.playerPhotoImg.classList.add('headshot-texture');
                 
                 // Handle load error - fall back to initials
                 elements.playerPhotoImg.onerror = function() {
+                    if (headshotSources[1] && this.src !== headshotSources[1]) {
+                        console.warn('[Lifeprint] Headshot primary failed, trying fallback URL');
+                        this.src = headshotSources[1];
+                        return;
+                    }
+
                     console.error('[Lifeprint] Headshot texture failed to load:', this.src);
                     this.classList.add('hidden');
                     if (elements.photoPlaceholder) {

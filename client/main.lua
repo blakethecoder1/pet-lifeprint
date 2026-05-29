@@ -684,6 +684,11 @@ RegisterNUICallback('saveRelationshipNote', function(data, cb)
     TriggerServerEvent('lifeprint:server:saveRelationshipNote', data or {})
 end)
 
+RegisterNUICallback('saveRelationshipAlias', function(data, cb)
+    cb({ success = true })
+    TriggerServerEvent('lifeprint:server:saveRelationshipAlias', data or {})
+end)
+
 RegisterNUICallback('addReputation', function(data, cb)
     cb({ success = true })
     TriggerServerEvent('lifeprint:server:addReputation', data or {})
