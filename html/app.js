@@ -14,6 +14,7 @@
         player: null,
         memories: [],
         relationships: [],
+        socialLinks: [],
         reputation: [],
         rumors: [],
         counters: {},
@@ -431,6 +432,15 @@
         return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     }
 
+    function escapeHtml(value) {
+        return String(value || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
     // Generate initials from a name
     function getInitials(name) {
         if (!name) return '?';
@@ -678,7 +688,7 @@
         if (state.peopleSearchQuery) {
             const query = state.peopleSearchQuery.toLowerCase();
             filtered = state.relationships.filter(r => 
-                r.targetName.toLowerCase().includes(query)
+                ((r.displayName || r.display_alias || r.targetName || '').toLowerCase().includes(query))
             );
         }
         
@@ -698,6 +708,7 @@
         }
 
         container.innerHTML = filtered.map((rel, index) => {
+            const displayName = rel.displayName || rel.display_alias || rel.targetName;
             const type = getRelationshipType(rel.relationship_value);
             const percentage = Math.abs(rel.relationship_value);
             const barClass = rel.relationship_value > 0 ? 'positive' : rel.relationship_value < 0 ? 'negative' : 'neutral';
@@ -707,29 +718,31 @@
             const isFaceMemory = rel.is_face_memory === 1 || rel.is_face_memory === true;
             const firstLocation = rel.first_location || '';
             const firstMet = rel.first_met ? formatDate(rel.first_met) : '';
+            const historyItems = Array.isArray(rel.history) ? rel.history.slice(0, 3) : [];
             
             // Photo handling - prioritize: headshot texture > photo URL > initials
             const imageSources = getImageSourceFromRelationship(rel);
-            const initials = getInitials(rel.targetName);
-            const photoStyle = getPhotoStyle(rel.targetName);
+            const initials = getInitials(displayName);
+            const photoStyle = getPhotoStyle(displayName);
             const finalImgSrc = imageSources.primary;
             const fallbackImgSrc = imageSources.fallback;
             const useHeadshot = imageSources.useHeadshot;
             
             // Debug log photo data
-            console.log(`[Lifeprint] Relationship ${rel.targetName}: headshot=${rel.headshot_txd || 'none'}, photo=${rel.photo || rel.avatar_url || 'none'}, final=${finalImgSrc || 'initials'}`);
+            console.log(`[Lifeprint] Relationship ${displayName}: headshot=${rel.headshot_txd || 'none'}, photo=${rel.photo || rel.avatar_url || 'none'}, final=${finalImgSrc || 'initials'}`);
             
             return `
                 <div class="relationship-card ${isFaceMemory ? 'face-memory-card' : ''}" data-target="${rel.target_identifier}" style="animation-delay: ${index * 0.05}s">
                     <div class="relationship-header">
                         <div class="relationship-avatar" style="${finalImgSrc ? '' : photoStyle}">
                             ${finalImgSrc 
-                                ? `<img src="${finalImgSrc}" data-fallback-src="${fallbackImgSrc || ''}" alt="${rel.targetName}" class="relationship-avatar-img${useHeadshot ? ' headshot-texture' : ''}" onerror="if(this.dataset.fallbackSrc && this.src!==this.dataset.fallbackSrc){console.warn('[Lifeprint] Primary image failed, trying fallback:', this.dataset.fallbackSrc);this.src=this.dataset.fallbackSrc;this.dataset.fallbackSrc='';return;}console.error('[Lifeprint] Image failed to load:', this.src);this.style.display='none';this.nextElementSibling.style.display='flex';" /><div class="relationship-avatar-fallback" style="display:none;${photoStyle}">${initials}</div>`
+                                ? `<img src="${finalImgSrc}" data-fallback-src="${fallbackImgSrc || ''}" alt="${displayName}" class="relationship-avatar-img${useHeadshot ? ' headshot-texture' : ''}" onerror="if(this.dataset.fallbackSrc && this.src!==this.dataset.fallbackSrc){console.warn('[Lifeprint] Primary image failed, trying fallback:', this.dataset.fallbackSrc);this.src=this.dataset.fallbackSrc;this.dataset.fallbackSrc='';return;}console.error('[Lifeprint] Image failed to load:', this.src);this.style.display='none';this.nextElementSibling.style.display='flex';" /><div class="relationship-avatar-fallback" style="display:none;${photoStyle}">${initials}</div>`
                                 : `<span class="relationship-avatar-initials">${initials}</span>`
                             }
                         </div>
                         <div class="relationship-info">
-                            <h4>${rel.targetName}</h4>
+                            <h4>${displayName}</h4>
+                            ${(rel.display_alias && rel.targetName && rel.display_alias !== rel.targetName) ? `<span class="relationship-alias">Legal: ${escapeHtml(rel.targetName)}</span>` : ''}
                             <div class="relationship-badges">
                                 <span class="relationship-badge" style="background: ${type.color}20; color: ${type.color};">${type.label}</span>
                                 ${isFaceMemory ? `<span class="face-memory-badge" title="You remembered this face">${icons.eye} Face Memory</span>` : ''}
@@ -750,6 +763,11 @@
                             </div>
                         </div>
                     `}
+                    ${historyItems.length > 0 ? `
+                        <div class="relationship-history">
+                            ${historyItems.map((item) => `<div class="relationship-history-item"><span>${escapeHtml(item.summary || 'Updated')}</span><span>${escapeHtml(item.createdAt || '')}</span></div>`).join('')}
+                        </div>
+                    ` : ''}
                     <div class="relationship-footer">
                         <span class="relationship-last-seen">
                             ${icons.clock}
@@ -768,6 +786,7 @@
                         ` : `
                             <div class="relationship-note-display">
                                 ${!isFaceMemory && noteText ? `<span class="relationship-notes">"${noteText}"</span>` : !isFaceMemory ? '<span class="relationship-notes-empty">Add note</span>' : ''}
+                                <button class="relationship-alias-btn" data-target="${rel.target_identifier}" data-current-alias="${escapeHtml(rel.display_alias || '')}" data-target-name="${escapeHtml(rel.targetName || '')}" title="Set alias">Alias</button>
                                 <button class="relationship-note-edit-btn" data-target="${rel.target_identifier}" title="Edit note">
                                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                                         <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
@@ -830,6 +849,19 @@
                 }
             });
         });
+
+        container.querySelectorAll('.relationship-alias-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const targetIdentifier = btn.dataset.target;
+                const currentAlias = btn.dataset.currentAlias || '';
+                const targetName = btn.dataset.targetName || 'this person';
+                const alias = window.prompt(`Set alias for ${targetName} (leave empty to clear):`, currentAlias);
+                if (alias !== null) {
+                    saveRelationshipAlias(targetIdentifier, alias.trim());
+                }
+            });
+        });
     }
 
     function saveRelationshipNote(targetIdentifier, note) {
@@ -847,6 +879,87 @@
         editingRelationshipId = null;
         renderRelationships();
         showToast('Note saved', 'success');
+    }
+
+    function saveRelationshipAlias(targetIdentifier, alias) {
+        nuiCallback('saveRelationshipAlias', {
+            targetIdentifier: targetIdentifier,
+            alias: alias
+        });
+
+        const rel = state.relationships.find(r => r.target_identifier === targetIdentifier);
+        if (rel) {
+            rel.display_alias = alias || null;
+            rel.displayName = alias || rel.targetName;
+        }
+
+        renderRelationships();
+        showToast(alias ? 'Alias saved' : 'Alias cleared', 'success');
+    }
+
+    function renderSocialLinks() {
+        if (!elements.socialLinksList) return;
+
+        const links = Array.isArray(state.socialLinks) ? state.socialLinks : [];
+
+        if (links.length === 0) {
+            elements.socialLinksList.innerHTML = `
+                <div class="empty-state">
+                    <div class="empty-state-icon">${icons.user}</div>
+                    <h3>No frequent connections yet</h3>
+                    <p>Spend more time near other players to build social patterns.</p>
+                </div>
+            `;
+            if (elements.socialWebGraph) elements.socialWebGraph.innerHTML = '';
+            return;
+        }
+
+        const topLinks = links.slice(0, 8);
+        const maxSeenCount = Math.max(...topLinks.map((link) => Number(link.seenCount) || 0), 1);
+
+        elements.socialLinksList.innerHTML = topLinks.map((link) => {
+            const name = link.targetName || link.targetIdentifier || 'Unknown';
+            const seenCount = Number(link.seenCount) || 0;
+            const strength = Math.max(1, Math.min(4, Math.ceil((seenCount / maxSeenCount) * 4)));
+
+            return `
+                <div class="social-link-card">
+                    <div class="social-link-avatar">${getInitials(name)}</div>
+                    <div class="social-link-info">
+                        <div class="social-link-name">${escapeHtml(name)}</div>
+                        <div class="social-link-meta">
+                            <span class="social-link-count">Seen ${seenCount}x</span>
+                            <span class="social-link-time">Last: ${escapeHtml(link.lastSeen || 'unknown')}</span>
+                        </div>
+                    </div>
+                    <div class="social-link-strength">
+                        <div class="strength-bar">
+                            ${[1, 2, 3, 4].map((i) => `<div class="strength-segment ${i <= strength ? 'filled' : ''} ${strength >= 3 ? 'high' : ''}"></div>`).join('')}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        if (elements.socialWebGraph) {
+            const nodes = topLinks.map((link, index) => {
+                const angle = (index / topLinks.length) * Math.PI * 2;
+                const radius = 34;
+                const x = 50 + Math.cos(angle) * radius;
+                const y = 50 + Math.sin(angle) * radius;
+                const seenCount = Number(link.seenCount) || 0;
+                const weight = Math.max(1, Math.round((seenCount / maxSeenCount) * 4));
+                return { x, y, weight };
+            });
+
+            elements.socialWebGraph.innerHTML = `
+                <svg viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet" aria-label="Social graph">
+                    ${nodes.map((node) => `<line x1="50" y1="50" x2="${node.x.toFixed(2)}" y2="${node.y.toFixed(2)}" stroke="rgba(128,147,255,0.5)" stroke-width="${node.weight * 0.5}" />`).join('')}
+                    <circle cx="50" cy="50" r="8" class="social-node self"></circle>
+                    ${nodes.map((node) => `<circle cx="${node.x.toFixed(2)}" cy="${node.y.toFixed(2)}" r="${2 + node.weight}" class="social-node"></circle>`).join('')}
+                </svg>
+            `;
+        }
     }
 
     function renderReputation() {
@@ -1053,6 +1166,7 @@
         renderPlayer();
         renderMemories();
         renderRelationships();
+        renderSocialLinks();
         renderReputation();
         renderRumors();
         renderBrain();
@@ -1710,6 +1824,14 @@
                 }
             });
         });
+
+        if (elements.debugCloseBtn) {
+            elements.debugCloseBtn.addEventListener('click', () => {
+                if (elements.debugPanel) {
+                    elements.debugPanel.classList.add('nui-hidden');
+                }
+            });
+        }
     }
 
     // =========================================================================
@@ -1864,6 +1986,7 @@
                 if (data.player) state.player = data.player;
                 if (data.memories) state.memories = data.memories;
                 if (data.relationships) state.relationships = data.relationships;
+                if (data.socialLinks) state.socialLinks = data.socialLinks;
                 if (data.reputation) state.reputation = data.reputation;
                 if (data.rumors) state.rumors = data.rumors;
                 if (data.counters) state.counters = data.counters;
@@ -1915,6 +2038,10 @@
         if (elements.app) {
             elements.app.classList.add('nui-hidden');
         }
+
+        if (elements.debugPanel) {
+            elements.debugPanel.classList.add('nui-hidden');
+        }
         
         closeAllModals();
     }
@@ -1923,6 +2050,7 @@
         if (data.player) state.player = data.player;
         if (data.memories) state.memories = data.memories;
         if (data.relationships) state.relationships = data.relationships;
+        if (data.socialLinks) state.socialLinks = data.socialLinks;
         if (data.reputation) state.reputation = data.reputation;
         if (data.rumors) state.rumors = data.rumors;
         if (data.counters) state.counters = data.counters;
@@ -2170,6 +2298,13 @@
             duration: data.duration || 4000,
             importance: 'minor'
         });
+    }
+
+    function handleShowDebugPanel(data) {
+        if (!elements.debugPanel || !elements.debugPanelContent) return;
+
+        elements.debugPanelContent.textContent = JSON.stringify(data || {}, null, 2);
+        elements.debugPanel.classList.remove('nui-hidden');
     }
 
     // =========================================================================
@@ -3108,6 +3243,8 @@
             playerUpdated: document.getElementById('player-updated'),
             memoriesList: document.getElementById('memories-list'),
             relationshipsList: document.getElementById('relationships-list'),
+            socialLinksList: document.getElementById('social-links-list'),
+            socialWebGraph: document.getElementById('social-web-graph'),
             reputationList: document.getElementById('reputation-list'),
             reputationTags: document.getElementById('reputation-tags'),
             rumorsList: document.getElementById('rumors-list'),
@@ -3128,6 +3265,10 @@
             // Recent faces
             recentFacesPanel: document.getElementById('recent-faces-panel'),
             recentFacesList: document.getElementById('recent-faces-list'),
+            // Debug panel
+            debugPanel: document.getElementById('debug-panel'),
+            debugPanelContent: document.getElementById('debug-panel-content'),
+            debugCloseBtn: document.getElementById('debug-close-btn'),
             // Settings
             settingsContainer: document.getElementById('settings-container'),
             // Character photo
