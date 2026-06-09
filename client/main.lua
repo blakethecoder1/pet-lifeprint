@@ -84,6 +84,23 @@ local function DebugLog(message)
     end
 end
 
+-- Some clients accidentally enable FiveM minicon, which pins script:nui logs on screen.
+-- Turn it off on resource start for normal gameplay UX.
+CreateThread(function()
+    if not (Config and Config.DisableMiniConsole) then return end
+
+    local enforceInterval = (Config and Config.MiniConsoleEnforceIntervalMs) or 15000
+    if type(enforceInterval) ~= 'number' or enforceInterval < 1000 then
+        enforceInterval = 15000
+    end
+
+    while true do
+        ExecuteCommand('con_minicon 0')
+        ExecuteCommand('con_miniconChannels script:none')
+        Wait(enforceInterval)
+    end
+end)
+
 -- ============================================================================
 -- NUI Helper Functions
 -- ============================================================================
@@ -554,22 +571,6 @@ RegisterNetEvent('lifeprint:client:showReport', function(reportData)
     })
 end)
 
--- Debug Panel Event Handler
-RegisterNetEvent('lifeprint:client:showDebugPanel', function(debugInfo)
-    DebugLog('Received debug info for panel display')
-    
-    if not debugInfo then
-        Bridge.Notify('Failed to gather debug information', 'error')
-        return
-    end
-    
-    -- Send to NUI debug panel
-    SendNUIMessage({
-        action = 'showDebugPanel',
-        data = debugInfo
-    })
-end)
-
 RegisterNetEvent('lifeprint:client:notify', function(message, notifyType)
     -- Native GTA notification (safe fallback)
     local ok, err = pcall(function()
@@ -697,6 +698,11 @@ end)
 RegisterNUICallback('addRumor', function(data, cb)
     cb({ success = true })
     TriggerServerEvent('lifeprint:server:addRumor', data or {})
+end)
+
+RegisterNUICallback('verifyRumor', function(data, cb)
+    cb({ success = true })
+    TriggerServerEvent('lifeprint:server:verifyRumor', data or {})
 end)
 
 RegisterNUICallback('deleteMemory', function(data, cb)

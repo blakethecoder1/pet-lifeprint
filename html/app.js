@@ -52,6 +52,21 @@
     const resourceName = window.GetParentResourceName ? window.GetParentResourceName() : 'lifeprint';
     const isDebug = !window.GetParentResourceName;
 
+    // In live FiveM NUI, suppress browser-console noise so it does not surface as HUD overlay.
+    if (!isDebug && typeof console !== 'undefined') {
+        console.log = function() {};
+        console.info = function() {};
+        console.debug = function() {};
+        console.warn = function() {};
+        console.error = function() {};
+    }
+
+    function verboseLog(...args) {
+        if (isDebug) {
+            console.log(...args);
+        }
+    }
+
     function nuiCallback(event, data) {
         if (isDebug) {
             console.log(`[Debug] NUI Callback: ${event}`, data);
@@ -1124,13 +1139,19 @@
             return;
         }
 
-        container.innerHTML = state.rumors.map((rumor, index) => `
+        container.innerHTML = state.rumors.map((rumor, index) => {
+            const verificationStatus = rumor.verification_status || 'unverified';
+            const credibility = Number(rumor.credibility_score) || 0;
+            const chainLabel = rumor.event_chain_id || rumor.eventChainId || null;
+
+            return `
             <div class="rumor-card" data-id="${rumor.id}" style="animation-delay: ${index * 0.05}s">
                 <div class="rumor-header">
                     <span class="rumor-type-badge ${rumor.rumor_type}">
                         ${getRumorIcon(rumor.rumor_type)}
                         ${rumor.rumor_type.charAt(0).toUpperCase() + rumor.rumor_type.slice(1)}
                     </span>
+                    <span class="rumor-verification ${verificationStatus}">${verificationStatus}</span>
                     <button class="memory-delete" data-id="${rumor.id}" title="Delete rumor">
                         ${icons.trash}
                     </button>
@@ -1146,8 +1167,17 @@
                         ${formatDate(rumor.created_at)}
                     </span>
                 </div>
+                <div class="rumor-footer">
+                    <span class="rumor-source">Credibility: ${credibility}</span>
+                    ${chainLabel ? `<span class="rumor-source">Chain: ${chainLabel}</span>` : ''}
+                </div>
+                <div class="rumor-actions" style="display:flex;gap:8px;margin-top:8px;">
+                    <button class="btn-secondary rumor-verify" data-id="${rumor.id}" data-status="verified" style="padding:4px 8px;">Verify</button>
+                    <button class="btn-secondary rumor-verify" data-id="${rumor.id}" data-status="disputed" style="padding:4px 8px;">Dispute</button>
+                </div>
             </div>
-        `).join('');
+        `;
+        }).join('');
 
         // Attach delete handlers
         container.querySelectorAll('.memory-delete').forEach(btn => {
@@ -1156,6 +1186,33 @@
                 deleteRumor(parseInt(btn.dataset.id));
             });
         });
+
+        container.querySelectorAll('.rumor-verify').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const rumorId = parseInt(btn.dataset.id, 10);
+                const status = btn.dataset.status;
+                verifyRumor(rumorId, status);
+            });
+        });
+    }
+
+    function verifyRumor(rumorId, status) {
+        nuiCallback('verifyRumor', { rumorId, status });
+
+        const rumor = state.rumors.find((r) => r.id === rumorId);
+        if (!rumor) return;
+
+        rumor.verification_status = status;
+        const currentScore = Number(rumor.credibility_score) || 0;
+        if (status === 'verified') {
+            rumor.credibility_score = Math.min(100, currentScore + 25);
+        } else if (status === 'disputed') {
+            rumor.credibility_score = Math.max(-100, currentScore - 25);
+        }
+
+        renderRumors();
+        showToast(`Rumor marked ${status}`, 'success');
     }
 
     function render() {
@@ -1825,13 +1882,6 @@
             });
         });
 
-        if (elements.debugCloseBtn) {
-            elements.debugCloseBtn.addEventListener('click', () => {
-                if (elements.debugPanel) {
-                    elements.debugPanel.classList.add('nui-hidden');
-                }
-            });
-        }
     }
 
     // =========================================================================
@@ -1839,19 +1889,18 @@
     // =========================================================================
 
     function setupNUIHandlers() {
-        console.log('[Lifeprint] Setting up NUI message handlers');
+        verboseLog('[Lifeprint] Setting up NUI message handlers');
         
         window.addEventListener('message', (event) => {
             const data = event.data;
             
-            // Always log incoming messages for debugging
-            console.log('[Lifeprint] Received raw message:', data);
+            verboseLog('[Lifeprint] Received raw message:', data);
             
             let payload = data;
             if (typeof data === 'string') {
                 try {
                     payload = JSON.parse(data);
-                    console.log('[Lifeprint] Parsed JSON payload:', payload);
+                    verboseLog('[Lifeprint] Parsed JSON payload:', payload);
                 } catch (e) {
                     console.error('[Lifeprint] Failed to parse message:', e);
                     return;
@@ -1866,7 +1915,7 @@
             const action = payload.action;
             const payloadData = payload.data;
             
-            console.log('[Lifeprint] Processing action:', action, 'with data:', payloadData);
+            verboseLog('[Lifeprint] Processing action:', action, 'with data:', payloadData);
 
             if (!action) {
                 console.error('[Lifeprint] No action in payload');
@@ -1938,21 +1987,18 @@
                     case 'refreshTab':
                         handleRefreshTab(payloadData || {});
                         break;
-                    case 'showDebugPanel':
-                        handleShowDebugPanel(payloadData || {});
-                        break;
                     case 'updateBrain':
                         handleUpdateBrain(payloadData || {});
                         break;
                     default:
-                        console.log('[Lifeprint] Unknown action:', action);
+                        verboseLog('[Lifeprint] Unknown action:', action);
                 }
             } catch (err) {
                 console.error('[Lifeprint] Error handling action', action, ':', err);
             }
         });
         
-        console.log('[Lifeprint] NUI handlers registered');
+        verboseLog('[Lifeprint] NUI handlers registered');
     }
 
     function handleShowLoading() {
@@ -2039,10 +2085,6 @@
             elements.app.classList.add('nui-hidden');
         }
 
-        if (elements.debugPanel) {
-            elements.debugPanel.classList.add('nui-hidden');
-        }
-        
         closeAllModals();
     }
 
@@ -2298,13 +2340,6 @@
             duration: data.duration || 4000,
             importance: 'minor'
         });
-    }
-
-    function handleShowDebugPanel(data) {
-        if (!elements.debugPanel || !elements.debugPanelContent) return;
-
-        elements.debugPanelContent.textContent = JSON.stringify(data || {}, null, 2);
-        elements.debugPanel.classList.remove('nui-hidden');
     }
 
     // =========================================================================
@@ -3230,8 +3265,8 @@
     // =========================================================================
 
     function init() {
-        console.log('[Lifeprint] Initializing application...');
-        console.log('[Lifeprint] isDebug:', isDebug);
+        verboseLog('[Lifeprint] Initializing application...');
+        verboseLog('[Lifeprint] isDebug:', isDebug);
         
         // Initialize DOM elements after page load
         elements = {
@@ -3265,10 +3300,6 @@
             // Recent faces
             recentFacesPanel: document.getElementById('recent-faces-panel'),
             recentFacesList: document.getElementById('recent-faces-list'),
-            // Debug panel
-            debugPanel: document.getElementById('debug-panel'),
-            debugPanelContent: document.getElementById('debug-panel-content'),
-            debugCloseBtn: document.getElementById('debug-close-btn'),
             // Settings
             settingsContainer: document.getElementById('settings-container'),
             // Character photo
@@ -3279,7 +3310,7 @@
             photoRefreshBtn: document.getElementById('photo-refresh-btn')
         };
 
-        console.log('[Lifeprint] Initialized elements:', elements);
+        verboseLog('[Lifeprint] Initialized elements:', elements);
 
         // Check for missing critical elements
         if (!elements.loadingScreen || !elements.mainContainer) {
@@ -3301,7 +3332,7 @@
 
         // Debug mode: auto-open with mock data
         if (isDebug) {
-            console.log('[Lifeprint] Debug mode - using mock data');
+            verboseLog('[Lifeprint] Debug mode - using mock data');
             setTimeout(() => {
                 handleOpen(mockData.open);
             }, 150);

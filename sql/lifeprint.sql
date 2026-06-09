@@ -26,6 +26,9 @@ CREATE TABLE IF NOT EXISTS `lifeprint_memories` (
     `timestamp` BIGINT NOT NULL COMMENT 'Unix timestamp',
     `visibility` VARCHAR(20) DEFAULT 'private' COMMENT 'Visibility: private, public, admin',
     `metadata` JSON NULL COMMENT 'Additional metadata (JSON)',
+    `decay_score` DOUBLE NOT NULL DEFAULT 1.0 COMMENT 'Current memory strength after decay (0.0 to 1.0)',
+    `reinforcement_count` INT NOT NULL DEFAULT 1 COMMENT 'Times this memory has been reinforced',
+    `event_chain_id` VARCHAR(64) NULL COMMENT 'Optional event chain identifier to group related memories',
     `is_demo` TINYINT(1) DEFAULT 0 COMMENT 'Is this demo data?',
     `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -57,6 +60,10 @@ BEGIN
     DECLARE coords_index_exists INT DEFAULT 0;
     DECLARE legacy_type_exists INT DEFAULT 0;
     DECLARE memory_type_exists INT DEFAULT 0;
+    DECLARE decay_score_exists INT DEFAULT 0;
+    DECLARE reinforcement_count_exists INT DEFAULT 0;
+    DECLARE event_chain_id_exists INT DEFAULT 0;
+    DECLARE event_chain_index_exists INT DEFAULT 0;
     
     -- Check for legacy 'type' column and rename to 'memory_type'
     SELECT COUNT(*) INTO legacy_type_exists 
@@ -190,6 +197,56 @@ BEGIN
     
     IF coords_index_exists = 0 THEN
         ALTER TABLE `lifeprint_memories` ADD INDEX `idx_coords` (`x`, `y`);
+    END IF;
+
+    -- Check for decay_score column
+    SELECT COUNT(*) INTO decay_score_exists
+    FROM information_schema.columns
+    WHERE table_schema = DATABASE()
+    AND table_name = 'lifeprint_memories'
+    AND column_name = 'decay_score';
+
+    IF decay_score_exists = 0 THEN
+        ALTER TABLE `lifeprint_memories`
+        ADD COLUMN `decay_score` DOUBLE NOT NULL DEFAULT 1.0 COMMENT 'Current memory strength after decay (0.0 to 1.0)'
+        AFTER `metadata`;
+    END IF;
+
+    -- Check for reinforcement_count column
+    SELECT COUNT(*) INTO reinforcement_count_exists
+    FROM information_schema.columns
+    WHERE table_schema = DATABASE()
+    AND table_name = 'lifeprint_memories'
+    AND column_name = 'reinforcement_count';
+
+    IF reinforcement_count_exists = 0 THEN
+        ALTER TABLE `lifeprint_memories`
+        ADD COLUMN `reinforcement_count` INT NOT NULL DEFAULT 1 COMMENT 'Times this memory has been reinforced'
+        AFTER `decay_score`;
+    END IF;
+
+    -- Check for event_chain_id column
+    SELECT COUNT(*) INTO event_chain_id_exists
+    FROM information_schema.columns
+    WHERE table_schema = DATABASE()
+    AND table_name = 'lifeprint_memories'
+    AND column_name = 'event_chain_id';
+
+    IF event_chain_id_exists = 0 THEN
+        ALTER TABLE `lifeprint_memories`
+        ADD COLUMN `event_chain_id` VARCHAR(64) NULL COMMENT 'Optional event chain identifier to group related memories'
+        AFTER `reinforcement_count`;
+    END IF;
+
+    -- Check for event chain index
+    SELECT COUNT(*) INTO event_chain_index_exists
+    FROM information_schema.statistics
+    WHERE table_schema = DATABASE()
+    AND table_name = 'lifeprint_memories'
+    AND index_name = 'idx_event_chain';
+
+    IF event_chain_index_exists = 0 THEN
+        ALTER TABLE `lifeprint_memories` ADD INDEX `idx_event_chain` (`event_chain_id`);
     END IF;
 END //
 DELIMITER ;
@@ -740,6 +797,11 @@ CREATE TABLE IF NOT EXISTS `lifeprint_rumors` (
     `expires_at` BIGINT NULL COMMENT 'Unix timestamp when rumor expires (NULL = never)',
     `created_at` BIGINT NOT NULL COMMENT 'Unix timestamp',
     `is_public` BOOLEAN DEFAULT FALSE COMMENT 'Whether rumor is public knowledge',
+    `verification_status` VARCHAR(20) NOT NULL DEFAULT 'unverified' COMMENT 'unverified, verified, disputed',
+    `credibility_score` INT NOT NULL DEFAULT 0 COMMENT 'Credibility score (-100 to 100)',
+    `verified_by_identifier` VARCHAR(100) NULL COMMENT 'Identifier that verified/disputed this rumor',
+    `verified_at` BIGINT NULL COMMENT 'Unix timestamp of verification/dispute',
+    `event_chain_id` VARCHAR(64) NULL COMMENT 'Optional event chain identifier to group related rumor events',
     `is_demo` TINYINT(1) DEFAULT 0 COMMENT 'Is this demo data?',
     `metadata` JSON NULL COMMENT 'Additional metadata',
     INDEX `idx_identifier` (`identifier`),
@@ -760,6 +822,12 @@ CREATE PROCEDURE IF NOT EXISTS `lifeprint_migrate_rumors`()
 BEGIN
     DECLARE is_demo_exists INT DEFAULT 0;
     DECLARE created_at_index_exists INT DEFAULT 0;
+    DECLARE verification_status_exists INT DEFAULT 0;
+    DECLARE credibility_score_exists INT DEFAULT 0;
+    DECLARE verified_by_exists INT DEFAULT 0;
+    DECLARE verified_at_exists INT DEFAULT 0;
+    DECLARE event_chain_id_exists INT DEFAULT 0;
+    DECLARE verification_index_exists INT DEFAULT 0;
     
     -- Check for is_demo column
     SELECT COUNT(*) INTO is_demo_exists 
@@ -783,6 +851,82 @@ BEGIN
     
     IF created_at_index_exists = 0 THEN
         ALTER TABLE `lifeprint_rumors` ADD INDEX `idx_created_at_timestamp` (`created_at`);
+    END IF;
+
+    -- Check for verification_status column
+    SELECT COUNT(*) INTO verification_status_exists
+    FROM information_schema.columns
+    WHERE table_schema = DATABASE()
+    AND table_name = 'lifeprint_rumors'
+    AND column_name = 'verification_status';
+
+    IF verification_status_exists = 0 THEN
+        ALTER TABLE `lifeprint_rumors`
+        ADD COLUMN `verification_status` VARCHAR(20) NOT NULL DEFAULT 'unverified' COMMENT 'unverified, verified, disputed'
+        AFTER `is_public`;
+    END IF;
+
+    -- Check for credibility_score column
+    SELECT COUNT(*) INTO credibility_score_exists
+    FROM information_schema.columns
+    WHERE table_schema = DATABASE()
+    AND table_name = 'lifeprint_rumors'
+    AND column_name = 'credibility_score';
+
+    IF credibility_score_exists = 0 THEN
+        ALTER TABLE `lifeprint_rumors`
+        ADD COLUMN `credibility_score` INT NOT NULL DEFAULT 0 COMMENT 'Credibility score (-100 to 100)'
+        AFTER `verification_status`;
+    END IF;
+
+    -- Check for verified_by_identifier column
+    SELECT COUNT(*) INTO verified_by_exists
+    FROM information_schema.columns
+    WHERE table_schema = DATABASE()
+    AND table_name = 'lifeprint_rumors'
+    AND column_name = 'verified_by_identifier';
+
+    IF verified_by_exists = 0 THEN
+        ALTER TABLE `lifeprint_rumors`
+        ADD COLUMN `verified_by_identifier` VARCHAR(100) NULL COMMENT 'Identifier that verified/disputed this rumor'
+        AFTER `credibility_score`;
+    END IF;
+
+    -- Check for verified_at column
+    SELECT COUNT(*) INTO verified_at_exists
+    FROM information_schema.columns
+    WHERE table_schema = DATABASE()
+    AND table_name = 'lifeprint_rumors'
+    AND column_name = 'verified_at';
+
+    IF verified_at_exists = 0 THEN
+        ALTER TABLE `lifeprint_rumors`
+        ADD COLUMN `verified_at` BIGINT NULL COMMENT 'Unix timestamp of verification/dispute'
+        AFTER `verified_by_identifier`;
+    END IF;
+
+    -- Check for event_chain_id column
+    SELECT COUNT(*) INTO event_chain_id_exists
+    FROM information_schema.columns
+    WHERE table_schema = DATABASE()
+    AND table_name = 'lifeprint_rumors'
+    AND column_name = 'event_chain_id';
+
+    IF event_chain_id_exists = 0 THEN
+        ALTER TABLE `lifeprint_rumors`
+        ADD COLUMN `event_chain_id` VARCHAR(64) NULL COMMENT 'Optional event chain identifier to group related rumor events'
+        AFTER `verified_at`;
+    END IF;
+
+    -- Check verification index
+    SELECT COUNT(*) INTO verification_index_exists
+    FROM information_schema.statistics
+    WHERE table_schema = DATABASE()
+    AND table_name = 'lifeprint_rumors'
+    AND index_name = 'idx_verification';
+
+    IF verification_index_exists = 0 THEN
+        ALTER TABLE `lifeprint_rumors` ADD INDEX `idx_verification` (`verification_status`, `credibility_score`);
     END IF;
 END //
 DELIMITER ;

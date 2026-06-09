@@ -5,6 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Lifeprint - The City Remembers</title>
     <link rel="stylesheet" href="style.css">
+    <script>
+        (function() {
+            var isLiveNui = typeof window.GetParentResourceName === 'function';
+            if (!isLiveNui || typeof console === 'undefined') return;
+            console.log = function() {};
+            console.info = function() {};
+            console.debug = function() {};
+            console.warn = function() {};
+            console.error = function() {};
+        })();
+    </script>
 </head>
 <body>
     <!-- Memory Pulse Overlay (screen-edge pulse effect) -->
@@ -567,21 +578,6 @@
         <div class="recent-faces-subtitle">People you've passed in the last 10 minutes</div>
         <div id="recent-faces-list" class="recent-faces-list">
             <!-- Entries will be populated dynamically -->
-        </div>
-    </div>
-
-    <!-- Debug Panel -->
-    <div id="debug-panel" class="debug-panel nui-hidden">
-        <div class="debug-panel-inner">
-            <div class="debug-panel-header">
-                <h3>Lifeprint Debug</h3>
-                <button id="debug-close-btn" class="close-btn" title="Close">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M18 6L6 18M6 6l12 12"/>
-                    </svg>
-                </button>
-            </div>
-            <pre id="debug-panel-content" class="debug-panel-content"></pre>
         </div>
     </div>
 

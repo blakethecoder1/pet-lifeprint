@@ -206,6 +206,57 @@ local function DecodeJsonSafely(value)
     return nil
 end
 
+local function ClampNumber(value, minValue, maxValue)
+    local n = tonumber(value) or 0
+    if n < minValue then return minValue end
+    if n > maxValue then return maxValue end
+    return n
+end
+
+local function BuildEventChainId(data)
+    if not data then return nil end
+    if data.eventChainId and data.eventChainId ~= '' then
+        return string.sub(tostring(data.eventChainId), 1, 64)
+    end
+
+    local eventType = data.memoryType or data.rumorType
+    local targetIdentifier = data.targetIdentifier or 'none'
+    local location = data.location or 'none'
+
+    if not eventType then return nil end
+    return string.sub(('%s:%s:%s'):format(tostring(eventType), tostring(targetIdentifier), tostring(location)), 1, 64)
+end
+
+local function CalculateMemoryDecay(memoryTimestamp, reinforcementCount)
+    local now = os.time()
+    local ts = tonumber(memoryTimestamp) or now
+    local ageDays = math.max(0, (now - ts) / 86400)
+    local reinforcement = math.max(1, tonumber(reinforcementCount) or 1)
+
+    local effectiveAge = ageDays / reinforcement
+    local decay = math.exp(-0.08 * effectiveAge)
+    return math.max(0.05, math.min(1.0, decay))
+end
+
+local function ApplyMemoryDecay(memories)
+    for _, memory in ipairs(memories or {}) do
+        local storedScore = tonumber(memory.decay_score)
+        local reinforcement = tonumber(memory.reinforcement_count) or 1
+        local computed = CalculateMemoryDecay(memory.timestamp, reinforcement)
+
+        if storedScore then
+            memory.decayScore = math.max(0.05, math.min(1.0, storedScore))
+        else
+            memory.decayScore = computed
+        end
+
+        memory.reinforcementCount = reinforcement
+        memory.eventChainId = memory.event_chain_id
+    end
+
+    return memories
+end
+
 -- ============================================================================
 -- Safe Database Operations (always wrapped in pcall)
 -- ============================================================================
@@ -259,7 +310,7 @@ local function GetPlayerMemories(identifier, isAdmin)
         end
     end)
     
-    return result or {}
+    return ApplyMemoryDecay(result or {})
 end
 
 -- Get all public memories for a player (for exports)
@@ -399,6 +450,12 @@ local function GetPlayerRumors(identifier)
         ]], { identifier, identifier, maxRumors })
     end)
     
+    for _, rumor in ipairs(result or {}) do
+        rumor.verification_status = rumor.verification_status or 'unverified'
+        rumor.credibility_score = ClampNumber(rumor.credibility_score or 0, -100, 100)
+        rumor.eventChainId = rumor.event_chain_id
+    end
+
     return result or {}
 end
 
@@ -933,6 +990,10 @@ local function TryMergeRecentMemory(identifier, data, visibility)
     metadata.repeat_count = (tonumber(metadata.repeat_count) or 1) + 1
     metadata.last_repeat_at = data.timestamp or os.time()
 
+    local reinforcementCount = metadata.repeat_count
+    local decayScore = CalculateMemoryDecay(data.timestamp or os.time(), reinforcementCount)
+    local eventChainId = BuildEventChainId(data)
+
     if type(data.metadata) == 'table' then
         for key, value in pairs(data.metadata) do
             metadata[key] = value
@@ -946,6 +1007,9 @@ local function TryMergeRecentMemory(identifier, data, visibility)
                 title = COALESCE(?, title),
                 description = ?,
                 timestamp = ?,
+                decay_score = ?,
+                reinforcement_count = ?,
+                event_chain_id = COALESCE(?, event_chain_id),
                 metadata = ?,
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
@@ -954,6 +1018,9 @@ local function TryMergeRecentMemory(identifier, data, visibility)
             data.title or nil,
             data.description or '',
             data.timestamp or os.time(),
+            decayScore,
+            reinforcementCount,
+            eventChainId,
             json.encode(metadata),
             row.id
         })
@@ -1015,6 +1082,10 @@ local function AddMemory(source, memoryType, title, description, location, relat
         data.memoryType = 'other'
     end
 
+    local initialReinforcement = 1
+    local decayScore = CalculateMemoryDecay(data.timestamp or os.time(), initialReinforcement)
+    local eventChainId = BuildEventChainId(data)
+
     local startMs = GetNowMs()
 
     local merged, mergedId = TryMergeRecentMemory(identifier, data, visibility)
@@ -1026,8 +1097,8 @@ local function AddMemory(source, memoryType, title, description, location, relat
     local result = SafeQuery(function()
         return MySQL.insert.await([[
             INSERT INTO lifeprint_memories 
-            (identifier, target_identifier, target_name, memory_type, title, description, location, x, y, z, timestamp, visibility, metadata, is_demo)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+            (identifier, target_identifier, target_name, memory_type, title, description, location, x, y, z, timestamp, visibility, metadata, decay_score, reinforcement_count, event_chain_id, is_demo)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
         ]], {
             identifier,
             data.targetIdentifier or nil,
@@ -1041,7 +1112,10 @@ local function AddMemory(source, memoryType, title, description, location, relat
             data.z or nil,
             data.timestamp or os.time(),
             visibility,
-            data.metadata and json.encode(data.metadata) or nil
+            data.metadata and json.encode(data.metadata) or nil,
+            decayScore,
+            initialReinforcement,
+            eventChainId,
         })
     end)
     
@@ -1755,11 +1829,15 @@ local function AddRumor(identifier, data)
         expiresAt = os.time() + (Config.RumorExpirationDays * 86400)
     end
     
+    local verificationStatus = (data.verificationStatus == 'verified' or data.verificationStatus == 'disputed') and data.verificationStatus or 'unverified'
+    local credibilityScore = ClampNumber(data.credibilityScore or 0, -100, 100)
+    local eventChainId = BuildEventChainId(data)
+
     local result = SafeQuery(function()
         return MySQL.insert.await([[
             INSERT INTO lifeprint_rumors
-            (identifier, source_identifier, target_identifier, target_name, rumor_type, content, expires_at, created_at, is_demo)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
+            (identifier, source_identifier, target_identifier, target_name, rumor_type, content, expires_at, created_at, is_public, verification_status, credibility_score, verified_by_identifier, verified_at, event_chain_id, is_demo)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
         ]], {
             identifier,
             identifier,
@@ -1768,7 +1846,13 @@ local function AddRumor(identifier, data)
             data.rumorType,
             data.content,
             data.expiresAt or expiresAt,
-            os.time()
+            os.time(),
+            data.isPublic and 1 or 0,
+            verificationStatus,
+            credibilityScore,
+            data.verifiedByIdentifier or nil,
+            data.verifiedAt or nil,
+            eventChainId
         })
     end)
     
@@ -1797,6 +1881,34 @@ local function DeleteRumor(identifier, rumorId)
     end)
     
     return result and result > 0
+end
+
+local function VerifyRumor(identifier, rumorId, status)
+    if not identifier or not rumorId then return false, 'Missing identifier or rumor id' end
+    if status ~= 'verified' and status ~= 'disputed' and status ~= 'unverified' then
+        return false, 'Invalid status'
+    end
+
+    local credibilityDelta = 0
+    if status == 'verified' then credibilityDelta = 25 end
+    if status == 'disputed' then credibilityDelta = -25 end
+
+    local result = SafeQuery(function()
+        return MySQL.update.await([[
+            UPDATE lifeprint_rumors
+            SET verification_status = ?,
+                credibility_score = LEAST(100, GREATEST(-100, credibility_score + ?)),
+                verified_by_identifier = ?,
+                verified_at = ?
+            WHERE id = ? AND (identifier = ? OR source_identifier = ?)
+        ]], { status, credibilityDelta, identifier, os.time(), rumorId, identifier, identifier })
+    end)
+
+    if result and result > 0 then
+        return true
+    end
+
+    return false, 'Rumor not found or update failed'
 end
 
 -- ============================================================================
@@ -3161,6 +3273,26 @@ RegisterNetEvent('lifeprint:server:addRumor', function(data)
     
     local success = AddRumor(identifier, data or {})
     if Bridge.Notify then Bridge.Notify(src, success and 'Rumor recorded' or 'Failed', success and 'success' or 'error') end
+end)
+
+RegisterNetEvent('lifeprint:server:verifyRumor', function(data)
+    local src = source
+    if not ValidateSource(src) then return end
+
+    local identifier = Bridge.GetIdentifier(src)
+    if not identifier then return end
+
+    if not data or not data.rumorId then
+        if Bridge.Notify then Bridge.Notify(src, 'No rumor selected', 'error') end
+        return
+    end
+
+    local success, err = VerifyRumor(identifier, tonumber(data.rumorId), data.status)
+    if success then
+        if Bridge.Notify then Bridge.Notify(src, 'Rumor status updated', 'success') end
+    else
+        if Bridge.Notify then Bridge.Notify(src, 'Failed: ' .. (err or 'unknown'), 'error') end
+    end
 end)
 
 RegisterNetEvent('lifeprint:server:deleteMemory', function(memoryId)
@@ -6040,8 +6172,10 @@ RegisterNetEvent('lifeprint:server:adminDebug', function()
         print('^3[Lifeprint Debug]^7 ========================')
     end
     
-    -- Send debug info to client for NUI display
-    TriggerClientEvent('lifeprint:client:showDebugPanel', src, debugInfo)
+    -- Debug UI is intentionally disabled; keep command as console-only report.
+    if Bridge and Bridge.Notify then
+        Bridge.Notify(src, 'Debug report logged to server console. Debug UI is disabled.', 'info')
+    end
     
     UpdateCallbackStatus('adminDebug', true)
 end)

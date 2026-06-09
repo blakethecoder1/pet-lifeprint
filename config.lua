@@ -41,6 +41,11 @@ Config.OpenCommand = "lifeprint"  -- Chat command to open NUI
 Config.CloseKey = "ESC"           -- Hardcoded, documentation only
 Config.LoadingScreenDuration = 6000  -- Milliseconds to show "Loading memories" screen
 
+-- Force-disable FiveM mini console overlay to prevent script:nui text on screen.
+-- Useful when another resource/framework re-enables minicon (common in some ESX stacks).
+Config.DisableMiniConsole = true
+Config.MiniConsoleEnforceIntervalMs = 15000
+
 -- ============================================================================
 -- MEMORIES
 -- ============================================================================
