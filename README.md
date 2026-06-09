@@ -8,7 +8,7 @@
 
 [![FiveM](https://img.shields.io/badge/FiveM-Server-00b344?style=flat-square)](https://fivem.net)
 [![Framework](https://img.shields.io/badge/Framework-Standalone%20|%20QBCore%20|%20Qbox%20|%20ESX-blue?style=flat-square)]()
-[![Version](https://img.shields.io/badge/Version-1.0.0-orange?style=flat-square)]()
+[![Version](https://img.shields.io/badge/Version-1.1.0-orange?style=flat-square)]()
 [![Built With](https://img.shields.io/badge/Built%20With-BLDR-purple?style=flat-square)]()
 
 </div>
@@ -54,6 +54,7 @@ A single look tells you what kind of story you’re building. It helps you remem
 - 👥 **People & relationship tracking** — who you’ve met and how they feel about you
 - ⚖️ **Reputation system** — six categories: General, Criminal, Business, Law, Medical, Underground
 - 🗣️ **City whispers & rumors** — the grapevine that follows your character
+- 🔐 **Privacy Controls 2.0** — public memory toggle, rumor sharing toggle, proximity tracking toggle, and per-category visibility
 - 💀 **Death, kill, and injury memories** — the consequences stick
 - 👁️ **NPC witnessed action tracking** — the world sees what you do
 - 🔔 **Memory notifications** — real-time feedback as your story unfolds
@@ -274,6 +275,21 @@ See [INTEGRATIONS.md](INTEGRATIONS.md) for complete examples.
 
 ---
 
+## New in v1.1.0
+
+### Privacy Controls 2.0
+
+Lifeprint now includes player-facing privacy controls with server-side enforcement:
+
+- **Allow Public Memories** toggle
+- **Allow Rumor Sharing** toggle
+- **Allow Proximity Tracking** toggle
+- **Per-category public memory visibility** (encounter, friendship, business, rescue, romantic, other, conflict, betrayal, crime)
+
+These controls apply in both UI behavior and server-side save logic, so restricted entries are forced private even if a client tries to send public visibility.
+
+---
+
 ## Automatic Tracking
 
 Lifeprint includes passive tracking that runs in the background:
@@ -298,6 +314,8 @@ All tracking includes cooldowns to prevent spam. Fully configurable in `config.l
 | `lifeprint_reputation_log` | History of reputation changes |
 | `lifeprint_reputation_counters` | Numerical counters for tag generation |
 | `lifeprint_rumors` | Rumors and whispers |
+| `lifeprint_settings` | Player preferences and privacy controls |
+| `lifeprint_social_links` | Seen-with proximity relationships |
 
 ---
 
