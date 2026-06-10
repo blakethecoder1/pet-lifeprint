@@ -96,7 +96,6 @@ CreateThread(function()
 
     while true do
         ExecuteCommand('con_minicon 0')
-        ExecuteCommand('con_miniconChannels script:none')
         Wait(enforceInterval)
     end
 end)
